@@ -1,0 +1,13 @@
+{
+  "name": "CardScanner",
+  "short_name": "CardScanner",
+  "description": "Inventario mobile di carte collezionabili",
+  "theme_color": "#123d32",
+  "background_color": "#f7f5ef",
+  "display": "standalone",
+  "scope": "/",
+  "start_url": "/",
+  "icons": [
+    { "src": "favicon.ico", "sizes": "48x48", "type": "image/x-icon" }
+  ]
+}

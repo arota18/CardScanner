@@ -1,0 +1,68 @@
+# Angular: output e cache locali
+/dist/
+/tmp/
+/out-tsc/
+/bazel-out/
+/.angular/
+/coverage/
+
+# Node e package manager
+/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tsbuildinfo
+
+# File di ambiente locali (mantiene versionabili gli esempi)
+.env
+.env.*
+!.env.example
+
+# IDE ed editor
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.history/
+
+# Visual Studio Code: conserva la configurazione condivisa
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/mcp.json
+
+# Test e strumenti locali
+/.nyc_output/
+/playwright-report/
+/test-results/
+/blob-report/
+__screenshots__/
+.sass-cache/
+/connect.lock
+/libpeerconnection.log
+testem.log
+/typings/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Altri sistemi operativi
+Thumbs.db
+Desktop.ini
