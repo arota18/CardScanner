@@ -12,15 +12,26 @@ interface ScryfallList { data: ScryfallCard[]; has_more: boolean; next_page?: st
 interface ScryfallCard {
   id: string; name: string; set: string; set_name: string; collector_number: string;
   rarity: string; lang: string; finishes: string[]; promo?: boolean; full_art?: boolean;
+  printed_name?: string;
   frame_effects?: string[]; image_uris?: { normal?: string }; card_faces?: { image_uris?: { normal?: string } }[];
 }
 
 const normalized = (s = '') => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/[^\p{Letter}\p{Number}]+/gu, ' ').trim();
 const similarity = (a = '', b = ''): number => {
-  const aa = new Set(normalized(a).split(' ').filter(Boolean));
-  const bb = new Set(normalized(b).split(' ').filter(Boolean));
-  const intersection = [...aa].filter((x) => bb.has(x)).length;
-  return aa.size || bb.size ? intersection / Math.max(aa.size, bb.size) : 0;
+  const aa = normalized(a);
+  const bb = normalized(b);
+  if (!aa || !bb) return 0;
+  const previous = Array.from({ length: bb.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= aa.length; i++) {
+    let diagonal = previous[0];
+    previous[0] = i;
+    for (let j = 1; j <= bb.length; j++) {
+      const above = previous[j];
+      previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + +(aa[i - 1] !== bb[j - 1]));
+      diagonal = above;
+    }
+  }
+  return 1 - previous[bb.length] / Math.max(aa.length, bb.length);
 };
 const finishes = (values: string[]): Finish[] => values.map((v): Finish =>
   v === 'nonfoil' ? 'Normal' : v === 'foil' ? 'Foil' : v === 'etched' ? 'Etched' : 'Other');
@@ -33,7 +44,7 @@ const variant = (card: ScryfallCard): string => {
   return labels.join('; ');
 };
 const mapCard = (card: ScryfallCard): CatalogCard => ({
-  catalogSource: 'Scryfall', catalogId: card.id, name: card.name, setCode: card.set.toUpperCase(),
+  catalogSource: 'Scryfall', catalogId: card.id, name: card.printed_name ?? card.name, setCode: card.set.toUpperCase(),
   setName: card.set_name, collectorNumber: card.collector_number, rarity: card.rarity,
   printingVariant: variant(card), language: card.lang || 'Unknown', availableFinishes: finishes(card.finishes),
   imageUrl: card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal,
@@ -66,21 +77,31 @@ export class MagicScryfallAdapter implements CatalogAdapter {
   }
 
   async automatic(hints: RecognitionHints, signal?: AbortSignal): Promise<Candidate[]> {
-    const parts = ['include:extras', 'include:multilingual', 'game:paper'];
-    if (hints.setCode) parts.push(`set:${hints.setCode}`);
-    if (hints.collectorNumber) parts.push(`cn:${hints.collectorNumber}`);
-    if (hints.name) parts.push(hints.name);
-    const page = await this.get<ScryfallList>(`https://api.scryfall.com/cards/search?unique=prints&q=${encodeURIComponent(parts.join(' '))}`, signal);
-    return page.data.map(mapCard).map((card) => {
+    const filters = ['include:extras', 'include:multilingual', 'game:paper'];
+    const searches: string[][] = [];
+    if (hints.setCode && hints.collectorNumber) searches.push([...filters, `set:${hints.setCode}`, `cn:${hints.collectorNumber}`]);
+    if (hints.name) searches.push([...filters, hints.name]);
+    if (!searches.length) return [];
+    const found = new Map<string, ScryfallCard>();
+    for (const parts of searches) {
+      try {
+        const page = await this.get<ScryfallList>(`https://api.scryfall.com/cards/search?unique=prints&q=${encodeURIComponent(parts.join(' '))}`, signal);
+        page.data.forEach((card) => found.set(card.id, card));
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== 'Nessun risultato.') throw error;
+      }
+    }
+    return [...found.values()].map(mapCard).map((card) => {
+      const nameSimilarity = similarity(card.name, hints.name);
       const rank = [
         +(normalized(card.setCode) === normalized(hints.setCode) && normalized(card.collectorNumber) === normalized(hints.collectorNumber)),
         +(normalized(card.collectorNumber) === normalized(hints.collectorNumber)),
         +(normalized(card.name) === normalized(hints.name)),
         +(normalized(card.language) === normalized(hints.language)),
-        similarity(card.name, hints.name),
+        nameSimilarity,
         card.catalogId,
       ] as const;
-      return { ...card, rank, strong: rank[0] === 1 && rank[2] === 1 };
+      return { ...card, rank, strong: rank[0] === 1 || rank[2] === 1 || nameSimilarity >= .8 };
     }).sort((a, b) => {
       for (let i = 0; i < 5; i++) { const delta = Number(b.rank[i]) - Number(a.rank[i]); if (delta) return delta; }
       return a.catalogId.localeCompare(b.catalogId);

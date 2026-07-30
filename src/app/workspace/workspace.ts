@@ -12,7 +12,7 @@ import { MagicScryfallAdapter } from '../core/catalog';
 import { CsvExporter } from '../core/csv-exporter';
 import { CONDITIONS, CatalogCard, Condition, FINISHES, Finish, Session, CardRecord } from '../core/models';
 import { SessionRepository } from '../core/session.repository';
-import { RecognitionEngine } from '../core/recognition';
+import { RecognitionEngine, RecognitionResult } from '../core/recognition';
 
 type View = 'home' | 'setup' | 'capture' | 'search' | 'confirm' | 'inventory' | 'summary';
 
@@ -33,6 +33,8 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
   readonly records = signal<CardRecord[]>([]); readonly candidates = signal<CatalogCard[]>([]);
   readonly busy = signal(false); readonly message = signal(''); readonly canAcquire = signal(false);
   readonly cameraOpen = signal(false); readonly torchAvailable = signal(false);
+  readonly lastRecognition = signal<RecognitionResult | undefined>(undefined);
+  readonly recognitionFailed = signal(false);
   private stream?: MediaStream;
   readonly count = computed(() => this.records().length);
   defaults = { condition: 'Near Mint' as Condition, finish: 'Normal' as Finish, storageLocation: '' };
@@ -141,9 +143,21 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error('Acquisizione non riuscita.')), 'image/jpeg', .9));
       const result = await this.recognition.recognize(blob);
       const candidates = await this.catalog.automatic(result.hints);
-      this.candidates.set(candidates); this.query = result.hints.name ?? ''; this.stopCamera(); this.view.set('search');
-      if (!candidates.length) this.message.set('Nessun candidato: prova la ricerca di catalogo.');
+      const strong = candidates.some((candidate) => candidate.strong);
+      this.lastRecognition.set(result); this.recognitionFailed.set(!strong);
+      this.candidates.set(candidates); this.query = strong ? result.hints.name ?? '' : ''; this.nextPage = undefined;
+      this.stopCamera(); this.view.set('search');
+      this.message.set(strong ? '' : 'Testo non riconosciuto.');
     } catch (error) { this.message.set(this.error(error)); } finally { this.busy.set(false); }
+  }
+  async retryPhoto(): Promise<void> {
+    this.lastRecognition.set(undefined); this.recognitionFailed.set(false); this.candidates.set([]); this.query = '';
+    this.view.set('capture');
+    await this.startCamera();
+  }
+  skipCard(): void {
+    this.lastRecognition.set(undefined); this.recognitionFailed.set(false); this.candidates.set([]); this.query = '';
+    this.view.set('capture');
   }
   stopCamera(): void { this.stream?.getTracks().forEach((track) => track.stop()); this.stream = undefined; this.cameraOpen.set(false); }
   private error(error: unknown): string { return error instanceof Error ? error.message : 'Operazione non riuscita.'; }

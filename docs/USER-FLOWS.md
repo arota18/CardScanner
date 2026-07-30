@@ -6,17 +6,18 @@ All'apertura, CardScanner propone di riprendere la Sessione conservata quando pr
 
 ## Scansione principale
 
-1. L'operatore inquadra il fronte della carta entro la guida e scatta manualmente.
+1. L'operatore inquadra il fronte della carta verticalmente entro la guida e scatta manualmente.
 2. L'app segnala uno scatto troppo scuro o sfocato.
 3. L'operatore usa la fotografia oppure la ripete.
-4. L'OCR locale estrae testo e numero da collezione; il catalogo restituisce i candidati.
-5. L'operatore sceglie un candidato, verifica gli attributi e conferma.
-6. La Registrazione di carta viene salvata nella bozza; la fotografia viene eliminata.
-7. L'app mostra brevemente l'aggiunta e torna alla fotocamera.
+4. L'OCR locale analizza separatamente la fascia del titolo e quella dei dati di stampa.
+5. Il catalogo verifica gli indizi OCR e restituisce i candidati; soltanto una corrispondenza forte viene evidenziata.
+6. L'operatore sceglie un candidato, verifica gli attributi e conferma.
+7. La Registrazione di carta viene salvata nella bozza; la fotografia viene eliminata.
+8. L'app mostra brevemente l'aggiunta e torna alla fotocamera.
 
 ## Mancato riconoscimento
 
-L'operatore può riprovare, aprire volontariamente la Ricerca di catalogo oppure saltare la carta. L'MVP non conserva una coda di Scansioni in sospeso. Senza rete o catalogo non è consentita una registrazione libera; la sessione conservata resta consultabile ed esportabile.
+Se il testo non è verificabile, l'app comunica “Testo non riconosciuto” invece di presentare l'assenza di candidati come un successo OCR. Mostra separatamente il testo estratto dal titolo e dai dati inferiori, senza conservare la fotografia, e propone nell'ordine Riprova foto, Cerca manualmente e Salta carta. La ricerca manuale non viene precompilata con testo OCR non verificato. L'MVP non conserva una coda di Scansioni in sospeso. Senza rete o catalogo non è consentita una registrazione libera; la sessione conservata resta consultabile ed esportabile.
 
 ## Revisione
 

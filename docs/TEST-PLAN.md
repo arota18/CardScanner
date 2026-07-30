@@ -8,6 +8,10 @@
 
 ## Riconoscimento Magic
 
+- Test automatici verificano le coordinate delle regioni di titolo e dati di stampa, la loro normalizzazione, l'interpretazione dei campi e il rifiuto di testo non verificato.
+- Un risultato OCR come `if`, privo di riscontro forte nel catalogo, non viene trattato come identificazione riuscita né precompila la ricerca manuale.
+- In caso di fallimento sono visibili il testo delle due regioni e, nell'ordine, Riprova foto, Cerca manualmente e Salta carta.
+- Prima del collaudo fotografico completo, una prova manuale su dispositivo con una carta “Island” verifica che il titolo non venga ricavato dall'illustrazione.
 - Dataset di almeno 200 carte reali con edizioni, lingue italiana e inglese, finiture, layout e condizioni differenti.
 - Gli scatti troppo scuri, sfocati o illeggibili vengono respinti.
 - Nel 90% o più delle fotografie utilizzabili, la stampa corretta appare tra i primi cinque candidati.

@@ -24,11 +24,11 @@ Il primo incremento è frontend-only: non include backend, account, database rem
 ## Pipeline di riconoscimento
 
 1. La fotocamera acquisisce manualmente il fronte entro una guida.
-2. Il client controlla luminosità e sfocatura ed esegue il ritaglio.
-3. Tesseract.js estrae localmente il testo.
-4. Un parser specifico del Gioco selezionato individua nome e numero da collezione.
+2. Il client controlla luminosità e sfocatura e, per Magic, ritaglia separatamente la fascia del titolo e quella dei dati di stampa.
+3. Tesseract.js analizza localmente entrambe le regioni, escludendo illustrazione e resto della carta.
+4. Un parser specifico del Gioco selezionato individua il possibile titolo, il codice dell'espansione e il numero da collezione.
 5. Un adattatore interroga il catalogo online del gioco.
-6. Un motore di ranking presenta al massimo cinque candidati.
+6. Un motore di ranking verifica gli indizi OCR, distingue corrispondenze forti e deboli e presenta al massimo cinque candidati.
 7. La Conferma crea una Registrazione di carta; la fotografia viene eliminata.
 
 ## Cataloghi previsti

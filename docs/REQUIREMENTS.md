@@ -60,10 +60,17 @@ Lo schema universale e l'interfaccia devono poter rappresentare tutti i giochi p
 - Se la rete o il catalogo non sono disponibili, la sessione conservata esistente resta consultabile, modificabile ed esportabile, ma scansione e ricerca nel catalogo vengono sospese.
 - L'MVP non consente registrazioni completamente libere e prive di `Catalog source` o `Catalog ID`.
 - Al ripristino del servizio l'operatore può riprendere la sessione senza perdere le Registrazioni già confermate.
-- La pipeline MVP ritaglia la carta, esegue OCR localmente nel browser, estrae nome e numero da collezione e interroga il catalogo online del Gioco selezionato.
+- La pipeline Magic ritaglia separatamente la fascia superiore del titolo e la fascia inferiore dei dati di stampa; l'illustrazione e il resto della carta non vengono inviati all'OCR.
+- Il primo incremento richiede che la carta sia verticale e allineata alla guida; correzione automatica di inclinazione e prospettiva resta fuori dall'MVP.
+- L'OCR elabora entrambe le regioni prima di interrogare il catalogo e mantiene caricato il motore tra scansioni successive; l'accuratezza ha priorità sulla risposta anticipata.
+- Il riconoscimento fotografico dell'MVP accetta carte Magic in italiano e inglese nella stessa sessione, senza una Lingua predefinita di sessione.
+- La pipeline estrae il possibile titolo, il codice dell'espansione e il numero da collezione e interroga il catalogo online del Gioco selezionato.
 - L'app presenta uno o più candidati ordinati per compatibilità; nessun candidato entra nell'inventario senza Conferma.
 - Il riconoscimento mostra al massimo cinque candidati con immagine di riferimento, nome, edizione, numero da collezione e variante.
-- Con confidenza bassa nessun candidato è preselezionato; una corrispondenza forte può essere evidenziata ma richiede comunque una Conferma esplicita.
+- Un testo OCR non verificato non viene trattato come nome valido né usato per precompilare la Ricerca di catalogo.
+- Una corrispondenza è forte quando titolo OCR e titolo di catalogo coincidono o sono molto simili, oppure quando coincidono codice dell'espansione e numero da collezione.
+- Con una corrispondenza debole nessun candidato è preselezionato; una corrispondenza forte può essere evidenziata ma richiede comunque una Conferma esplicita.
+- Quando il riconoscimento fallisce, l'app mostra separatamente il testo estratto dalle due regioni senza conservare la fotografia.
 - Se non esiste un candidato soddisfacente, la ricerca manuale nel catalogo è disponibile soltanto su richiesta dell'operatore.
 - L'operatore può rimandare una Scansione non risolta e passare immediatamente alla carta successiva.
 - Una Scansione rimandata non modifica l'Inventario di sessione né il CSV.
