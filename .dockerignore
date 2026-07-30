@@ -1,0 +1,5 @@
+**/node_modules/
+**/.vscode
+**/.gitlab-ci.yml
+**/README.md
+**/.git
