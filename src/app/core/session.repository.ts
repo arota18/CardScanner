@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import Dexie, { Table } from 'dexie';
 import { CardRecord, Session, SessionDefaults } from './models';
+import { createUuid } from './uuid';
 
 class CardScannerDb extends Dexie {
   sessions!: Table<Session, string>;
@@ -31,7 +32,7 @@ export class SessionRepository {
         await this.db.sessions.clear();
       }
       const session: Session = {
-        id: crypto.randomUUID(), status: 'active', game: 'Magic: The Gathering',
+        id: createUuid(), status: 'active', game: 'Magic: The Gathering',
         defaults, createdAt: new Date().toISOString(), schemaVersion: 1,
       };
       await this.db.sessions.add(session);
@@ -41,7 +42,7 @@ export class SessionRepository {
 
   async add(session: Session, record: Omit<CardRecord, 'id' | 'sessionId' | 'registeredAt'>): Promise<CardRecord> {
     if (session.status !== 'active') throw new Error('La sessione terminata è congelata.');
-    const saved = { ...record, id: crypto.randomUUID(), sessionId: session.id, registeredAt: new Date().toISOString() };
+    const saved = { ...record, id: createUuid(), sessionId: session.id, registeredAt: new Date().toISOString() };
     await this.db.transaction('rw', this.db.sessions, this.db.records, async () => {
       const fresh = await this.db.sessions.get(session.id);
       if (fresh?.status !== 'active') throw new Error('La sessione terminata è congelata.');
