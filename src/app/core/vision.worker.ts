@@ -11,6 +11,18 @@ function detect(image:ImageData, guide:Region):CardGeometry|undefined {
   const max=640, scale=Math.min(1,max/Math.max(image.width,image.height)), w=Math.round(image.width*scale),h=Math.round(image.height*scale),g=gray(image);
   const sample=(x:number,y:number)=>g[Math.min(image.height-1,Math.round(y/scale))*image.width+Math.min(image.width-1,Math.round(x/scale))];
   const strengths=[28,42,58]; const candidates:{corners:Point[]}[]=[];
+  // A Magic card has a continuous dark outer frame. Projections suppress isolated
+  // texture edges (fabric, wood grain) that would otherwise dominate extrema.
+  for(const darkLimit of [55,70,85]){
+    const rows=new Uint32Array(h),cols=new Uint32Array(w);
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(sample(x,y)<darkLimit){rows[y]++;cols[x]++;}
+    const activeRows=[...rows].map((count,index)=>({count,index})).filter(v=>v.count>w*.12).map(v=>v.index);
+    const activeCols=[...cols].map((count,index)=>({count,index})).filter(v=>v.count>h*.12).map(v=>v.index);
+    if(activeRows.length&&activeCols.length){
+      const left=Math.min(...activeCols)/scale,right=Math.max(...activeCols)/scale,top=Math.min(...activeRows)/scale,bottom=Math.max(...activeRows)/scale;
+      candidates.push({corners:[{x:left,y:top},{x:right,y:top},{x:right,y:bottom},{x:left,y:bottom}]});
+    }
+  }
   for(const threshold of strengths){
     const points:Point[]=[];
     for(let y=2;y<h-2;y+=2)for(let x=2;x<w-2;x+=2){const edge=Math.abs(sample(x+2,y)-sample(x-2,y))+Math.abs(sample(x,y+2)-sample(x,y-2));if(edge>threshold*2)points.push({x:x/scale,y:y/scale});}

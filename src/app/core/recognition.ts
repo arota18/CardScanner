@@ -6,7 +6,9 @@ import { CardGeometry, OcrObservation, OcrVariant, RecognitionEvidence, Recognit
 export interface QualityResult { brightness:number; sharpness:number; acceptable:boolean; reasons:string[] }
 export interface RecognitionResult extends RecognitionEvidence { text:string; titleText:string; detailsText:string; hints:RecognitionHints; geometry:CardGeometry }
 export type RecognitionPhase = 'Rilevamento'|'Rettifica'|'Lettura';
-export const MAGIC_REGIONS={title:{x:.035,y:.025,width:.93,height:.14},details:{x:.035,y:.84,width:.93,height:.14}} as const satisfies Record<string,Region>;
+// The title crop deliberately stops before the mana-cost column: decorative
+// frames and mana symbols materially reduce SINGLE_LINE accuracy.
+export const MAGIC_REGIONS={title:{x:.035,y:.045,width:.62,height:.065},details:{x:.035,y:.84,width:.93,height:.14}} as const satisfies Record<string,Region>;
 const VARIANTS:OcrVariant[]=['grayscale','clahe','otsu','adaptive'];
 const clean=(text:string)=>text.replace(/\s+/g,' ').trim();
 
