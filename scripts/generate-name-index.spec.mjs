@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { buildIndex } from './generate-name-index.mjs';
+import { buildIndex, parseBulkMetadata } from './generate-name-index.mjs';
+
+test('accepts direct and collection bulk metadata', () => {
+  assert.deepEqual(parseBulkMetadata({type:'all_cards',download_uri:'https://data.example/all.json',updated_at:'2026-01-01'}),{downloadUri:'https://data.example/all.json',sourceUpdatedAt:'2026-01-01'});
+  assert.deepEqual(parseBulkMetadata({data:[{type:'all_cards',download_uri:'https://data.example/all.json'}]},new Headers({date:'Fri, 31 Jul 2026 00:00:00 GMT'})),{downloadUri:'https://data.example/all.json',sourceUpdatedAt:'Fri, 31 Jul 2026 00:00:00 GMT'});
+  assert.throws(()=>parseBulkMetadata({data:[]}),/nessuna voce all_cards/);
+});
 
 test('filters, deduplicates faces and sorts deterministically', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'index-test-')); const file = join(dir, 'bulk.json');

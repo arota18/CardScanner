@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 export const SCHEMA_VERSION = 1;
 export const OUTPUT_PATH = resolve('public/catalogs/magic/name-index.v1.json');
+export const BULK_METADATA_URL = 'https://api.scryfall.com/bulk-data/all_cards';
 
 const text = value => typeof value === 'string' && value.trim() ? value.trim() : undefined;
 const normalize = value => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('en').replace(/[^\p{Letter}\p{Number}]+/gu, ' ').trim();
@@ -68,6 +69,23 @@ export async function buildIndex(file, sourceUpdatedAt) {
   return { schemaVersion: SCHEMA_VERSION, sourceUpdatedAt, identityCount: outputIdentities.length, aliasCount, identities: outputIdentities };
 }
 
+export function parseBulkMetadata(metadata, responseHeaders = new Headers()) {
+  const bulk = metadata?.type === 'all_cards'
+    ? metadata
+    : metadata?.data?.find?.(item => item?.type === 'all_cards');
+  const downloadUri = text(bulk?.download_uri);
+  const sourceUpdatedAt = text(bulk?.updated_at)
+    ?? text(bulk?.updatedAt)
+    ?? text(responseHeaders.get('last-modified'))
+    ?? text(responseHeaders.get('date'));
+  if (!downloadUri || !sourceUpdatedAt) {
+    const shape = Array.isArray(metadata?.data) ? 'collection' : typeof metadata;
+    const keys = bulk && typeof bulk === 'object' ? Object.keys(bulk).sort().join(',') : 'nessuna voce all_cards';
+    throw new Error(`Schema metadati Scryfall non valido (${shape}; campi: ${keys}).`);
+  }
+  return { downloadUri, sourceUpdatedAt };
+}
+
 async function download(url, destination) {
   const response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'CardScanner name index generator' } });
   if (!response.ok || !response.body) throw new Error(`Download Scryfall fallito (${response.status}).`);
@@ -78,14 +96,13 @@ async function download(url, destination) {
 export async function generate(output = OUTPUT_PATH) {
   const temporary = await mkdtemp(join(tmpdir(), 'cardscanner-scryfall-'));
   try {
-    const response = await fetch('https://api.scryfall.com/bulk-data', { headers: { Accept: 'application/json', 'User-Agent': 'CardScanner name index generator' } });
+    const response = await fetch(BULK_METADATA_URL, { headers: { Accept: 'application/json', 'User-Agent': 'CardScanner/1.0 (+https://github.com/arota18/CardScanner)' } });
     if (!response.ok) throw new Error(`Metadati Scryfall non disponibili (${response.status}).`);
     const metadata = await response.json();
-    const bulk = metadata?.data?.find(item => item.type === 'all_cards');
-    if (!bulk?.download_uri || !bulk?.updated_at) throw new Error('Schema metadati Scryfall non valido.');
+    const { downloadUri, sourceUpdatedAt } = parseBulkMetadata(metadata, response.headers);
     const bulkFile = join(temporary, 'all-cards.json');
-    await download(bulk.download_uri, bulkFile);
-    const index = await buildIndex(bulkFile, bulk.updated_at);
+    await download(downloadUri, bulkFile);
+    const index = await buildIndex(bulkFile, sourceUpdatedAt);
     await mkdir(dirname(output), { recursive: true });
     const pending = `${output}.${process.pid}.tmp`;
     await new Promise((ok, fail) => { const stream = createWriteStream(pending, { encoding: 'utf8' }); stream.on('error', fail); stream.end(`${JSON.stringify(index)}\n`, ok); });
