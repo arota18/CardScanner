@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rename, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createInterface } from 'node:readline';
 
 export const SCHEMA_VERSION = 1;
 export const OUTPUT_PATH = resolve('public/catalogs/magic/name-index.v1.json');
@@ -37,9 +38,26 @@ export async function* streamJsonArray(file) {
   if (!started || !ended || depth) throw new Error('Bulk non valido: array incompleto.');
 }
 
-export async function buildIndex(file, sourceUpdatedAt) {
+export async function* streamJsonLines(file) {
+  const lines = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
+  let lineNumber = 0, found = false;
+  for await (const line of lines) {
+    lineNumber++;
+    if (!line.trim()) continue;
+    found = true;
+    try { yield JSON.parse(line); }
+    catch { throw new Error(`Bulk JSONL non valido alla riga ${lineNumber}.`); }
+  }
+  if (!found) throw new Error('Bulk JSONL non valido: file vuoto.');
+}
+
+async function* streamCards(file, format) {
+  yield* format === 'jsonl' ? streamJsonLines(file) : streamJsonArray(file);
+}
+
+export async function buildIndex(file, sourceUpdatedAt, format = 'json') {
   const identities = new Map();
-  for await (const card of streamJsonArray(file)) {
+  for await (const card of streamCards(file, format)) {
     if (!Array.isArray(card.games) || !card.games.includes('paper') || !['it', 'en'].includes(card.lang)) continue;
     if (!text(card.id) || !text(card.name)) throw new Error('Schema Scryfall non valido: id o nome assente.');
     const identityId = text(card.oracle_id) ?? `scryfall:${card.id}`;
@@ -73,7 +91,9 @@ export function parseBulkMetadata(metadata, responseHeaders = new Headers()) {
   const bulk = metadata?.type === 'all_cards'
     ? metadata
     : metadata?.data?.find?.(item => item?.type === 'all_cards');
-  const downloadUri = text(bulk?.download_uri);
+  const jsonlDownloadUri = text(bulk?.jsonl_download_uri);
+  const legacyDownloadUri = text(bulk?.download_uri);
+  const downloadUri = jsonlDownloadUri ?? legacyDownloadUri;
   const sourceUpdatedAt = text(bulk?.updated_at)
     ?? text(bulk?.updatedAt)
     ?? text(responseHeaders.get('last-modified'))
@@ -83,7 +103,7 @@ export function parseBulkMetadata(metadata, responseHeaders = new Headers()) {
     const keys = bulk && typeof bulk === 'object' ? Object.keys(bulk).sort().join(',') : 'nessuna voce all_cards';
     throw new Error(`Schema metadati Scryfall non valido (${shape}; campi: ${keys}).`);
   }
-  return { downloadUri, sourceUpdatedAt };
+  return { downloadUri, sourceUpdatedAt, format: jsonlDownloadUri ? 'jsonl' : 'json' };
 }
 
 async function download(url, destination) {
@@ -99,10 +119,10 @@ export async function generate(output = OUTPUT_PATH) {
     const response = await fetch(BULK_METADATA_URL, { headers: { Accept: 'application/json', 'User-Agent': 'CardScanner/1.0 (+https://github.com/arota18/CardScanner)' } });
     if (!response.ok) throw new Error(`Metadati Scryfall non disponibili (${response.status}).`);
     const metadata = await response.json();
-    const { downloadUri, sourceUpdatedAt } = parseBulkMetadata(metadata, response.headers);
-    const bulkFile = join(temporary, 'all-cards.json');
+    const { downloadUri, sourceUpdatedAt, format } = parseBulkMetadata(metadata, response.headers);
+    const bulkFile = join(temporary, format === 'jsonl' ? 'all-cards.jsonl' : 'all-cards.json');
     await download(downloadUri, bulkFile);
-    const index = await buildIndex(bulkFile, sourceUpdatedAt);
+    const index = await buildIndex(bulkFile, sourceUpdatedAt, format);
     await mkdir(dirname(output), { recursive: true });
     const pending = `${output}.${process.pid}.tmp`;
     await new Promise((ok, fail) => { const stream = createWriteStream(pending, { encoding: 'utf8' }); stream.on('error', fail); stream.end(`${JSON.stringify(index)}\n`, ok); });
