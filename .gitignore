@@ -19,6 +19,7 @@ pnpm-debug.log*
 .env.*
 !.env.example
 example_image/
+test_result/
 
 # IDE ed editor
 .idea/
