@@ -33,7 +33,7 @@ Lo schema universale e l'interfaccia devono poter rappresentare tutti i giochi p
 - Autofocus e torcia vengono offerti quando il browser e il dispositivo li supportano.
 - Prima dell'OCR, l'app segnala fotografie troppo scure o sfocate.
 - L'operatore visualizza l'anteprima e sceglie se usare o ripetere lo scatto.
-- L'immagine viene ritagliata automaticamente entro la guida; un editor di ritaglio manuale e lo scatto automatico sono fuori dall'MVP.
+- L'intero frame viene analizzato: i bordi della carta devono essere rilevati e rettificati automaticamente; in assenza di un quadrilatero affidabile lo scatto viene rifiutato. Un editor manuale degli angoli resta fuori dall'MVP.
 - L'app usa il Gioco selezionato e propone nome, edizione e numero da collezione; l'operatore conferma o corregge la proposta prima di aggiungerla all'inventario.
 - Ogni sessione di scansione riguarda un solo gioco, scelto all'inizio.
 - Condizione e finitura hanno valori predefiniti di sessione, modificabili durante la conferma.
@@ -61,7 +61,7 @@ Lo schema universale e l'interfaccia devono poter rappresentare tutti i giochi p
 - L'MVP non consente registrazioni completamente libere e prive di `Catalog source` o `Catalog ID`.
 - Al ripristino del servizio l'operatore può riprendere la sessione senza perdere le Registrazioni già confermate.
 - La pipeline Magic ritaglia separatamente la fascia superiore del titolo e la fascia inferiore dei dati di stampa; l'illustrazione e il resto della carta non vengono inviati all'OCR.
-- Il primo incremento richiede che la carta sia verticale e allineata alla guida; correzione automatica di inclinazione e prospettiva resta fuori dall'MVP.
+- Il primo incremento supporta carte verticali inclinate o decentrate e applica una rettifica prospettica automatica a `900 × 1257` pixel.
 - L'OCR elabora entrambe le regioni prima di interrogare il catalogo e mantiene caricato il motore tra scansioni successive; l'accuratezza ha priorità sulla risposta anticipata.
 - Il riconoscimento fotografico dell'MVP accetta carte Magic in italiano e inglese nella stessa sessione, senza una Lingua predefinita di sessione.
 - La pipeline estrae il possibile titolo, il codice dell'espansione e il numero da collezione e interroga il catalogo online del Gioco selezionato.
@@ -97,9 +97,9 @@ Lo schema universale e l'interfaccia devono poter rappresentare tutti i giochi p
 
 - Salvataggio della bozza, riepilogo, modifica ed esportazione devono restare utilizzabili con almeno 1.000 Registrazioni di carta nella stessa sessione.
 - La soglia di 1.000 registrazioni è un obiettivo minimo di collaudo, non un limite applicativo esplicito.
-- Dal comando "Usa foto", i candidati devono comparire entro 8 secondi nel 95% dei casi su un dispositivo mobile di fascia media con connessione stabile.
-- Durante il riconoscimento l'interfaccia mostra le fasi di ritaglio, lettura e ricerca.
-- Dopo 15 secondi senza risultato l'operatore può riprovare, aprire la ricerca manuale oppure saltare la carta.
+- La durata dal comando "Usa foto" ai candidati, compreso il dettaglio per fase, viene registrata come metrica osservata; 8 secondi non è un vincolo di accettazione e l'accuratezza ha priorità.
+- Durante il riconoscimento l'interfaccia mostra Rilevamento, Rettifica, Lettura e Ricerca.
+- Dopo 15 secondi senza risultato l'operatore può annullare, fare un nuovo scatto, aprire la ricerca manuale oppure saltare la carta; l'annullamento termina il lavoro e i worker vengono ricreati alla scansione successiva.
 - Il collaudo del riconoscimento Magic usa almeno 200 carte reali con varietà di edizioni, lingue, finiture, layout e condizioni.
 - Per almeno il 90% delle fotografie giudicate utilizzabili, la stampa corretta deve comparire tra i cinque candidati.
 - Fotografie scure, sfocate o illeggibili devono essere rifiutate dal controllo qualità e non conteggiate come identificazioni errate.

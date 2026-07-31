@@ -35,7 +35,7 @@ export interface CatalogCard {
 }
 
 export interface Candidate extends CatalogCard {
-  rank: readonly [number, number, number, number, number, string];
+  rank: readonly [number, number, number, number, number, number, string];
   strong: boolean;
 }
 
@@ -55,4 +55,31 @@ export interface RecognitionHints {
   collectorNumber?: string;
   language?: string;
   name?: string;
+}
+
+export interface Point { x: number; y: number }
+export interface Region { x: number; y: number; width: number; height: number }
+export interface CardGeometry {
+  corners: readonly [Point, Point, Point, Point];
+  sourceWidth: number;
+  sourceHeight: number;
+  canonicalWidth: 900;
+  canonicalHeight: 1257;
+  score: number;
+}
+
+export type OcrRegion = 'title' | 'details';
+export type OcrVariant = 'grayscale' | 'clahe' | 'otsu' | 'adaptive';
+export interface OcrObservation {
+  region: OcrRegion;
+  variant: OcrVariant;
+  text: string;
+  confidence: number;
+  hints: RecognitionHints;
+  /** Couples title and details produced from the same preprocessing variant. */
+  group: OcrVariant;
+}
+export interface RecognitionEvidence {
+  observations: readonly OcrObservation[];
+  bestHints: RecognitionHints;
 }

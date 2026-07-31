@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { MAGIC_REGIONS, RecognitionEngine, parseMagicText } from './recognition';
+import { MAGIC_REGIONS, RecognitionEngine, chooseDiagnostic, parseMagicText } from './recognition';
 
 describe('RecognitionEngine quality', () => {
   it('rifiuta un frame buio e uniforme', () => {
     const result = new RecognitionEngine().quality({ data: new Uint8ClampedArray(4 * 100), width: 10, height: 10, colorSpace: 'srgb' } as ImageData);
     expect(result.acceptable).toBe(false);
     expect(result.reasons).toContain('Foto troppo scura');
+  });
+});
+
+describe('OCR evidence', () => {
+  it('prefers complete evidence, then confidence, for diagnostics', () => {
+    const base={region:'details' as const,group:'otsu' as const};
+    const chosen=chooseDiagnostic([
+      {...base,variant:'otsu',text:'123',confidence:99,hints:{collectorNumber:'123'}},
+      {...base,variant:'adaptive',group:'adaptive',text:'LCI 123',confidence:70,hints:{setCode:'LCI',collectorNumber:'123'}},
+    ]);
+    expect(chosen?.text).toBe('LCI 123');
   });
 });
 

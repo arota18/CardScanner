@@ -11,7 +11,7 @@ L'applicazione deve essere pubblicata tramite HTTPS, necessario per l'accesso af
 - Angular con supporto PWA e service worker.
 - Safari su iPhone/iPad e Chrome su Android come browser supportati nell'MVP.
 - IndexedDB per la Sessione conservata recuperabile.
-- Tesseract.js eseguito in un Web Worker per non bloccare l'interfaccia durante l'OCR.
+- Preprocessing prospettico in un Web Worker WebAssembly/self-hosted e Tesseract.js in worker, senza bloccare l'interfaccia.
 - Fotografie elaborate esclusivamente in memoria e rilasciate dopo OCR e generazione dei candidati.
 - Generazione del CSV interamente sul dispositivo.
 - Una sola Sessione conservata, In corso o Terminata, con sessione e Registrazioni in tabelle IndexedDB separate.
@@ -23,13 +23,13 @@ Il primo incremento è frontend-only: non include backend, account, database rem
 
 ## Pipeline di riconoscimento
 
-1. La fotocamera acquisisce manualmente il fronte entro una guida.
-2. Il client controlla luminosità e sfocatura e, per Magic, ritaglia separatamente la fascia del titolo e quella dei dati di stampa.
-3. Tesseract.js analizza localmente entrambe le regioni, escludendo illustrazione e resto della carta.
-4. Un parser specifico del Gioco selezionato individua il possibile titolo, il codice dell'espansione e il numero da collezione.
-5. Un adattatore interroga il catalogo online del gioco.
-6. Un motore di ranking verifica gli indizi OCR, distingue corrispondenze forti e deboli e presenta al massimo cinque candidati.
-7. La Conferma crea una Registrazione di carta; la fotografia viene eliminata.
+1. La fotocamera acquisisce l'intero frame e traduce la guida nelle coordinate reali del video.
+2. Il worker prova più soglie di bordo, seleziona un quadrilatero convesso plausibile e rifiuta lo scatto quando i bordi non sono affidabili.
+3. I quattro angoli vengono ordinati e la carta rettificata a `900 × 1257`; titolo e dati di stampa sono ritagli relativi alla carta canonica.
+4. Per entrambe le regioni vengono sempre prodotte scala di grigi, contrasto locale, Otsu e soglia adattiva con polarità normalizzata.
+5. Tesseract.js usa `SINGLE_LINE` sul titolo e `SPARSE_TEXT` sui dati inferiori. Ogni osservazione conserva testo, confidenza, variante e indizi.
+6. L'adattatore deduplica le coppie set/numero compatibili e i titoli, interroga Scryfall e aggrega tutte le evidenze nel ranking.
+7. La Conferma crea una Registrazione; frame, geometria, bitmap e varianti vengono rilasciati e non entrano in IndexedDB.
 
 ## Cataloghi previsti
 

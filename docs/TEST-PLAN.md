@@ -15,8 +15,12 @@
 - Dataset di almeno 200 carte reali con edizioni, lingue italiana e inglese, finiture, layout e condizioni differenti.
 - Gli scatti troppo scuri, sfocati o illeggibili vengono respinti.
 - Nel 90% o più delle fotografie utilizzabili, la stampa corretta appare tra i primi cinque candidati.
-- Nel 95% dei casi con rete stabile, i candidati appaiono entro 8 secondi da "Usa foto".
-- Dopo 15 secondi sono disponibili ripetizione, ricerca manuale e salto.
+- Si registrano separatamente rilevamento, nuovi scatti richiesti, falsi candidati forti, durata di ogni fase e picco di memoria; 8 secondi è una metrica comparativa, non un criterio di rifiuto.
+- Dopo 15 secondi sono disponibili annullamento, ripetizione, ricerca manuale e salto; si prova l'annullamento durante preprocessing, OCR e catalogo.
+- Fixture includono carta inclinata, decentrata, parzialmente fuori guida, sfondo complesso, sleeve, riflessi e prospettiva marcata. Scene senza carta devono essere rifiutate.
+- Test unitari coprono angoli, omografia, ritagli canonici, quadrilateri, quattro varianti e aggregazione senza unire set/numero incompatibili.
+- Il benchmark usa almeno 200 scansioni e richiede la stampa corretta nei primi cinque per almeno il 90% delle immagini utilizzabili, oltre a un risultato superiore alla pipeline precedente.
+- Una sequenza di almeno 20 scansioni sul più debole iPhone supportato non deve mostrare crash o crescita progressiva della memoria.
 
 ## Bozza e resilienza
 

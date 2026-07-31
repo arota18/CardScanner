@@ -1,9 +1,9 @@
 import { Injectable } from '@angular/core';
-import { Candidate, CatalogCard, Finish, RecognitionHints } from './models';
+import { Candidate, CatalogCard, Finish, RecognitionEvidence, RecognitionHints } from './models';
 
 export interface CatalogPage { cards: CatalogCard[]; hasMore: boolean; nextPage?: string }
 export interface CatalogAdapter {
-  automatic(hints: RecognitionHints, signal?: AbortSignal): Promise<Candidate[]>;
+  automatic(evidence: RecognitionEvidence, signal?: AbortSignal): Promise<Candidate[]>;
   manual(query: string, page?: string, signal?: AbortSignal): Promise<CatalogPage>;
   resolve(id: string, signal?: AbortSignal): Promise<CatalogCard>;
 }
@@ -76,11 +76,21 @@ export class MagicScryfallAdapter implements CatalogAdapter {
     } finally { release(); }
   }
 
-  async automatic(hints: RecognitionHints, signal?: AbortSignal): Promise<Candidate[]> {
+  async automatic(evidence: RecognitionEvidence, signal?: AbortSignal): Promise<Candidate[]> {
     const filters = ['include:extras', 'include:multilingual', 'game:paper'];
+    // Set and collector number are only paired when the same OCR variant observed them.
+    const pairedHints = evidence.observations.filter(o => o.region === 'details' && o.hints.setCode && o.hints.collectorNumber).map(o => o.hints);
+    const titles = evidence.observations.filter(o => o.region === 'title' && o.hints.name).map(o => ({ name: o.hints.name!, confidence: o.confidence }));
     const searches: string[][] = [];
-    if (hints.setCode && hints.collectorNumber) searches.push([...filters, `set:${hints.setCode}`, `cn:${hints.collectorNumber}`]);
-    if (hints.name) searches.push([...filters, hints.name]);
+    const queryKeys = new Set<string>();
+    for (const hints of pairedHints) {
+      const parts = [...filters, `set:${hints.setCode}`, `cn:${hints.collectorNumber}`]; const key = parts.join(' ');
+      if (!queryKeys.has(key)) { queryKeys.add(key); searches.push(parts); }
+    }
+    for (const hints of [...titles].sort((a,b) => b.confidence-a.confidence)) {
+      const parts = [...filters, hints.name]; const key = normalized(parts.join(' '));
+      if (!queryKeys.has(key)) { queryKeys.add(key); searches.push(parts); }
+    }
     if (!searches.length) return [];
     const found = new Map<string, ScryfallCard>();
     for (const parts of searches) {
@@ -92,18 +102,19 @@ export class MagicScryfallAdapter implements CatalogAdapter {
       }
     }
     return [...found.values()].map(mapCard).map((card) => {
-      const nameSimilarity = similarity(card.name, hints.name);
+      const joint = pairedHints.some(h => normalized(card.setCode) === normalized(h.setCode) && normalized(card.collectorNumber) === normalized(h.collectorNumber));
+      const exact = titles.some(h => normalized(card.name) === normalized(h.name));
+      const nameSimilarity = Math.max(0, ...titles.map(h => similarity(card.name, h.name)));
+      const number = pairedHints.some(h => normalized(card.collectorNumber) === normalized(h.collectorNumber));
+      const agreeing = pairedHints.filter(h => normalized(card.setCode) === normalized(h.setCode) && normalized(card.collectorNumber) === normalized(h.collectorNumber)).length + titles.filter(h => similarity(card.name,h.name) >= .8).length;
+      const confidence = Math.max(0, ...evidence.observations.filter(o => (o.region === 'title' && similarity(card.name,o.hints.name) >= .8) || (o.region === 'details' && normalized(card.setCode) === normalized(o.hints.setCode) && normalized(card.collectorNumber) === normalized(o.hints.collectorNumber))).map(o => o.confidence));
       const rank = [
-        +(normalized(card.setCode) === normalized(hints.setCode) && normalized(card.collectorNumber) === normalized(hints.collectorNumber)),
-        +(normalized(card.collectorNumber) === normalized(hints.collectorNumber)),
-        +(normalized(card.name) === normalized(hints.name)),
-        +(normalized(card.language) === normalized(hints.language)),
-        nameSimilarity,
+        +joint, +exact, nameSimilarity, +number, agreeing, confidence,
         card.catalogId,
       ] as const;
-      return { ...card, rank, strong: rank[0] === 1 || rank[2] === 1 || nameSimilarity >= .8 };
+      return { ...card, rank, strong: joint || exact || nameSimilarity >= .8 };
     }).sort((a, b) => {
-      for (let i = 0; i < 5; i++) { const delta = Number(b.rank[i]) - Number(a.rank[i]); if (delta) return delta; }
+      for (let i = 0; i < 6; i++) { const delta = Number(b.rank[i]) - Number(a.rank[i]); if (delta) return delta; }
       return a.catalogId.localeCompare(b.catalogId);
     }).slice(0, 5);
   }

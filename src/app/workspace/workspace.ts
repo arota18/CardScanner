@@ -12,7 +12,7 @@ import { MagicScryfallAdapter } from '../core/catalog';
 import { CsvExporter } from '../core/csv-exporter';
 import { CONDITIONS, CatalogCard, Condition, FINISHES, Finish, Session, CardRecord } from '../core/models';
 import { SessionRepository } from '../core/session.repository';
-import { RecognitionEngine, RecognitionResult } from '../core/recognition';
+import { RecognitionEngine, RecognitionPhase, RecognitionResult } from '../core/recognition';
 
 type View = 'home' | 'setup' | 'capture' | 'search' | 'confirm' | 'inventory' | 'summary';
 
@@ -35,7 +35,10 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
   readonly cameraOpen = signal(false); readonly torchAvailable = signal(false);
   readonly lastRecognition = signal<RecognitionResult | undefined>(undefined);
   readonly recognitionFailed = signal(false);
+  readonly recognitionPhase = signal<RecognitionPhase | 'Ricerca' | undefined>(undefined);
+  readonly slowRecognition = signal(false);
   private stream?: MediaStream;
+  private scanAbort?: AbortController;
   readonly count = computed(() => this.records().length);
   defaults = { condition: 'Near Mint' as Condition, finish: 'Normal' as Finish, storageLocation: '' };
   query = ''; nextPage?: string; selected?: CatalogCard;
@@ -128,28 +131,33 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
   }
   async capture(): Promise<void> {
     const video = this.camera?.nativeElement; if (!video?.videoWidth) return;
-    this.busy.set(true);
+    this.busy.set(true); this.slowRecognition.set(false); this.scanAbort = new AbortController();
+    const slowTimer = setTimeout(() => this.slowRecognition.set(true), 15_000);
     try {
       const canvas = document.createElement('canvas');
-      const targetRatio = 63 / 88; const sourceRatio = video.videoWidth / video.videoHeight;
-      const width = sourceRatio > targetRatio ? video.videoHeight * targetRatio : video.videoWidth;
-      const height = sourceRatio > targetRatio ? video.videoHeight : video.videoWidth / targetRatio;
-      canvas.width = 900; canvas.height = Math.round(900 / targetRatio);
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
       const context = canvas.getContext('2d', { willReadFrequently: true });
       if (!context) throw new Error('Canvas non disponibile.');
-      context.drawImage(video, (video.videoWidth - width) / 2, (video.videoHeight - height) / 2, width, height, 0, 0, canvas.width, canvas.height);
-      const quality = this.recognition.quality(context.getImageData(0, 0, canvas.width, canvas.height));
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const qualityCanvas = document.createElement('canvas'); qualityCanvas.width = 320; qualityCanvas.height = Math.max(1, Math.round(320 * canvas.height / canvas.width));
+      const qualityContext = qualityCanvas.getContext('2d', { willReadFrequently: true }); if (!qualityContext) throw new Error('Canvas non disponibile.');
+      qualityContext.drawImage(canvas, 0, 0, qualityCanvas.width, qualityCanvas.height);
+      const quality = this.recognition.quality(qualityContext.getImageData(0, 0, qualityCanvas.width, qualityCanvas.height));
       if (!quality.acceptable && !confirm(`${quality.reasons.join('. ')}. Usare comunque?`)) return;
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error('Acquisizione non riuscita.')), 'image/jpeg', .9));
-      const result = await this.recognition.recognize(blob);
-      const candidates = await this.catalog.automatic(result.hints);
+      const result = await this.recognition.recognize(blob, this.guideInFrame(video), this.scanAbort.signal, phase => this.recognitionPhase.set(phase));
+      this.recognitionPhase.set('Ricerca');
+      const candidates = await this.catalog.automatic(result, this.scanAbort.signal);
       const strong = candidates.some((candidate) => candidate.strong);
       this.lastRecognition.set(result); this.recognitionFailed.set(!strong);
       this.candidates.set(candidates); this.query = strong ? result.hints.name ?? '' : ''; this.nextPage = undefined;
       this.stopCamera(); this.view.set('search');
       this.message.set(strong ? '' : 'Testo non riconosciuto.');
-    } catch (error) { this.message.set(this.error(error)); } finally { this.busy.set(false); }
+    } catch (error) { if (!(error instanceof DOMException && error.name === 'AbortError')) this.message.set(this.error(error)); }
+    finally { clearTimeout(slowTimer); this.busy.set(false); this.recognitionPhase.set(undefined); this.slowRecognition.set(false); this.scanAbort = undefined; }
   }
+  async cancelRecognition(): Promise<void> { this.scanAbort?.abort(); await this.recognition.destroy(); this.message.set('Riconoscimento annullato.'); }
+  openManualSearch(): void { this.scanAbort?.abort(); this.query=''; this.candidates.set([]); this.stopCamera(); this.view.set('search'); }
   async retryPhoto(): Promise<void> {
     this.lastRecognition.set(undefined); this.recognitionFailed.set(false); this.candidates.set([]); this.query = '';
     this.view.set('capture');
@@ -160,5 +168,11 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
     this.view.set('capture');
   }
   stopCamera(): void { this.stream?.getTracks().forEach((track) => track.stop()); this.stream = undefined; this.cameraOpen.set(false); }
+  private guideInFrame(video: HTMLVideoElement): {x:number;y:number;width:number;height:number} {
+    const box=video.getBoundingClientRect(), scale=Math.max(box.width/video.videoWidth,box.height/video.videoHeight);
+    const renderedWidth=video.videoWidth*scale,renderedHeight=video.videoHeight*scale,offsetX=(box.width-renderedWidth)/2,offsetY=(box.height-renderedHeight)/2;
+    const left=box.width*.05,top=box.height*.05,right=box.width*.95,bottom=box.height*.95;
+    return{x:Math.max(0,(left-offsetX)/renderedWidth),y:Math.max(0,(top-offsetY)/renderedHeight),width:Math.min(1,(right-offsetX)/renderedWidth)-Math.max(0,(left-offsetX)/renderedWidth),height:Math.min(1,(bottom-offsetY)/renderedHeight)-Math.max(0,(top-offsetY)/renderedHeight)};
+  }
   private error(error: unknown): string { return error instanceof Error ? error.message : 'Operazione non riuscita.'; }
 }
