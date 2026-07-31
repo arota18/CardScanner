@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { buildIndex, parseBulkMetadata } from './generate-name-index.mjs';
+import { gzip } from 'node:zlib';
+import { promisify } from 'node:util';
+import { buildIndex, decompressBulkIfNeeded, parseBulkMetadata } from './generate-name-index.mjs';
+
+const gzipAsync = promisify(gzip);
 
 test('accepts direct and collection bulk metadata', () => {
   assert.deepEqual(parseBulkMetadata({type:'all_cards',jsonl_download_uri:'https://data.example/all.jsonl',updated_at:'2026-01-01'}),{downloadUri:'https://data.example/all.jsonl',sourceUpdatedAt:'2026-01-01',format:'jsonl'});
@@ -23,6 +27,17 @@ test('detects the downloaded format instead of trusting the metadata hint', asyn
   await writeFile(file, JSON.stringify([{id:'card',oracle_id:'oracle',name:'Sun Titan',lang:'en',games:['paper']} ]));
   try { const result = await buildIndex(file, '2026-01-01', 'jsonl'); assert.equal(result.identityCount, 1); }
   finally { await rm(dir, { recursive:true, force:true }); }
+});
+
+test('decompresses gzip bulk downloads before parsing', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'index-test-')); const file = join(dir, 'bulk.json.gz');
+  const cards = [{id:'card',oracle_id:'oracle',name:'Sun Titan',lang:'en',games:['paper']}];
+  await writeFile(file, await gzipAsync(JSON.stringify(cards)));
+  try {
+    const readable = await decompressBulkIfNeeded(file);
+    const result = await buildIndex(readable, '2026-01-01');
+    assert.equal(result.identityCount, 1);
+  } finally { await rm(dir, { recursive:true, force:true }); }
 });
 
 test('filters, deduplicates faces and sorts deterministically', async () => {

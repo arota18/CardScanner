@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, mkdtemp, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, rename, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline';
+import { createGunzip } from 'node:zlib';
 
 export const SCHEMA_VERSION = 1;
 export const OUTPUT_PATH = resolve('public/catalogs/magic/name-index.v1.json');
@@ -124,6 +126,19 @@ async function download(url, destination) {
   await response.body.pipeTo(new WritableStream({ write(chunk) { return new Promise((ok, fail) => output.write(chunk, error => error ? fail(error) : ok())); }, close() { return new Promise(ok => output.end(ok)); }, abort(error) { output.destroy(error); } }));
 }
 
+export async function decompressBulkIfNeeded(file) {
+  const handle = await open(file, 'r');
+  const header = Buffer.alloc(2);
+  let bytesRead;
+  try { ({ bytesRead } = await handle.read(header, 0, header.length, 0)); }
+  finally { await handle.close(); }
+  if (bytesRead < 2 || header[0] !== 0x1f || header[1] !== 0x8b) return file;
+
+  const decompressed = `${file}.decompressed`;
+  await pipeline(createReadStream(file), createGunzip(), createWriteStream(decompressed));
+  return decompressed;
+}
+
 export async function generate(output = OUTPUT_PATH) {
   const temporary = await mkdtemp(join(tmpdir(), 'cardscanner-scryfall-'));
   try {
@@ -133,7 +148,8 @@ export async function generate(output = OUTPUT_PATH) {
     const { downloadUri, sourceUpdatedAt, format } = parseBulkMetadata(metadata, response.headers);
     const bulkFile = join(temporary, format === 'jsonl' ? 'all-cards.jsonl' : 'all-cards.json');
     await download(downloadUri, bulkFile);
-    const index = await buildIndex(bulkFile, sourceUpdatedAt, format);
+    const readableBulkFile = await decompressBulkIfNeeded(bulkFile);
+    const index = await buildIndex(readableBulkFile, sourceUpdatedAt, format);
     await mkdir(dirname(output), { recursive: true });
     const pending = `${output}.${process.pid}.tmp`;
     await new Promise((ok, fail) => { const stream = createWriteStream(pending, { encoding: 'utf8' }); stream.on('error', fail); stream.end(`${JSON.stringify(index)}\n`, ok); });
