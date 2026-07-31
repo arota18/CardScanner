@@ -51,13 +51,24 @@ export async function* streamJsonLines(file) {
   if (!found) throw new Error('Bulk JSONL non valido: file vuoto.');
 }
 
-async function* streamCards(file, format) {
-  yield* format === 'jsonl' ? streamJsonLines(file) : streamJsonArray(file);
+async function* streamCards(file) {
+  const input = createReadStream(file, { encoding: 'utf8' });
+  let firstCharacter;
+  for await (const chunk of input) {
+    firstCharacter = chunk.match(/\S/)?.[0];
+    if (firstCharacter) break;
+  }
+  input.destroy();
+
+  if (!firstCharacter) throw new Error('Bulk non valido: file vuoto.');
+  if (firstCharacter === '[') yield* streamJsonArray(file);
+  else if (firstCharacter === '{') yield* streamJsonLines(file);
+  else throw new Error(`Bulk non valido: formato non riconosciuto (inizia con ${JSON.stringify(firstCharacter)}).`);
 }
 
-export async function buildIndex(file, sourceUpdatedAt, format = 'json') {
+export async function buildIndex(file, sourceUpdatedAt) {
   const identities = new Map();
-  for await (const card of streamCards(file, format)) {
+  for await (const card of streamCards(file)) {
     if (!Array.isArray(card.games) || !card.games.includes('paper') || !['it', 'en'].includes(card.lang)) continue;
     if (!text(card.id) || !text(card.name)) throw new Error('Schema Scryfall non valido: id o nome assente.');
     const identityId = text(card.oracle_id) ?? `scryfall:${card.id}`;

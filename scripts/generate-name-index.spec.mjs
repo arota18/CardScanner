@@ -18,6 +18,13 @@ test('streams the new JSON Lines bulk format', async () => {
   finally { await rm(dir, { recursive:true, force:true }); }
 });
 
+test('detects the downloaded format instead of trusting the metadata hint', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'index-test-')); const file = join(dir, 'bulk.jsonl');
+  await writeFile(file, JSON.stringify([{id:'card',oracle_id:'oracle',name:'Sun Titan',lang:'en',games:['paper']} ]));
+  try { const result = await buildIndex(file, '2026-01-01', 'jsonl'); assert.equal(result.identityCount, 1); }
+  finally { await rm(dir, { recursive:true, force:true }); }
+});
+
 test('filters, deduplicates faces and sorts deterministically', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'index-test-')); const file = join(dir, 'bulk.json');
   const cards = [
