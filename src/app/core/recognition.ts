@@ -5,7 +5,7 @@ import { CardGeometry, OcrObservation, OcrVariant, RecognitionEvidence, Recognit
 
 export interface QualityResult { brightness:number; sharpness:number; acceptable:boolean; reasons:string[] }
 export interface RecognitionResult extends RecognitionEvidence { text:string; titleText:string; hints:RecognitionHints; geometry:CardGeometry }
-export type RecognitionPhase = 'Rilevamento'|'Rettifica'|'Lettura';
+export type RecognitionPhase = 'Ritaglio'|'Preparazione'|'Lettura';
 // The title crop deliberately stops before the mana-cost column: decorative
 // frames and mana symbols materially reduce SINGLE_LINE accuracy.
 export const TITLE_REGION={x:.035,y:.04,width:.68,height:.08} as const satisfies Region;
@@ -28,12 +28,12 @@ export class RecognitionEngine{
   quality(data:ImageData):QualityResult{let brightness=0,edges=0;for(let i=0;i<data.data.length;i+=4){const lum=.2126*data.data[i]+.7152*data.data[i+1]+.0722*data.data[i+2];brightness+=lum;if(i>=4)edges+=Math.abs(lum-(.2126*data.data[i-4]+.7152*data.data[i-3]+.0722*data.data[i-2]));}const pixels=data.data.length/4,result={brightness:brightness/pixels,sharpness:edges/Math.max(1,pixels-1),acceptable:true,reasons:[] as string[]};if(result.brightness<55)result.reasons.push('Foto troppo scura');if(result.sharpness<5)result.reasons.push('Foto probabilmente sfocata');result.acceptable=!result.reasons.length;return result;}
 
   async recognize(image:Blob,guide:Region={x:.12,y:.05,width:.76,height:.9},signal?:AbortSignal,onPhase?:(phase:RecognitionPhase)=>void):Promise<RecognitionResult>{
-    onPhase?.('Rilevamento'); const bitmap=await createImageBitmap(image); let source:ImageData;
+    onPhase?.('Ritaglio'); const bitmap=await createImageBitmap(image); let source:ImageData;
     try{const canvas=new OffscreenCanvas(bitmap.width,bitmap.height),ctx=canvas.getContext('2d');if(!ctx)throw new Error('Canvas OCR non disponibile.');ctx.drawImage(bitmap,0,0);source=ctx.getImageData(0,0,bitmap.width,bitmap.height);}finally{bitmap.close();}
     const processed=await this.preprocess(source,guide,signal,onPhase); signal?.throwIfAborted(); onPhase?.('Lettura');
     this.worker??=createWorker(['ita','eng'],undefined,{workerPath:'/ocr/worker.min.js',corePath:'/ocr/tesseract-core.wasm.js',langPath:'/ocr/lang'});
     const ocr=await this.worker,observations:OcrObservation[]=[];
-    for(const variant of VARIANTS){signal?.throwIfAborted();const card=processed.variants[variant];const title=await this.crop(card,TITLE_REGION);
+    for(const variant of VARIANTS){signal?.throwIfAborted();const title=await this.toBlob(processed.variants[variant]);
       await ocr.setParameters({tessedit_pageseg_mode:PSM.SINGLE_LINE,preserve_interword_spaces:'1'});const tr=await ocr.recognize(title);
       const titleText=clean(tr.data.text),hints=parseCardTitle(titleText);
       observations.push({region:'title',variant,group:variant,text:titleText,confidence:tr.data.confidence,hints});
@@ -43,8 +43,9 @@ export class RecognitionEngine{
   }
   private preprocess(image:ImageData,guide:Region,signal?:AbortSignal,onPhase?:(p:RecognitionPhase)=>void):Promise<{geometry:CardGeometry;variants:Record<OcrVariant,ImageData>}>{
     this.vision??=new Worker(new URL('./vision.worker',import.meta.url),{type:'module'});const id=++this.request;
-    return new Promise((resolve,reject)=>{const abort=()=>{this.vision?.terminate();this.vision=undefined;reject(signal?.reason??new DOMException('Annullato','AbortError'));};signal?.addEventListener('abort',abort,{once:true});const listener=(event:MessageEvent)=>{if(event.data.id!==id)return;this.vision?.removeEventListener('message',listener);signal?.removeEventListener('abort',abort);if(event.data.error)reject(new Error(event.data.error));else{onPhase?.('Rettifica');resolve(event.data);}};this.vision!.addEventListener('message',listener);this.vision!.postMessage({id,image,guide},[image.data.buffer]);});
+    return new Promise((resolve,reject)=>{const abort=()=>{this.vision?.terminate();this.vision=undefined;reject(signal?.reason??new DOMException('Annullato','AbortError'));};signal?.addEventListener('abort',abort,{once:true});const listener=(event:MessageEvent)=>{if(event.data.id!==id)return;this.vision?.removeEventListener('message',listener);signal?.removeEventListener('abort',abort);if(event.data.error)reject(new Error(event.data.error));else{onPhase?.('Preparazione');resolve(event.data);}};this.vision!.addEventListener('message',listener);this.vision!.postMessage({id,image,guide,titleOnly:true},[image.data.buffer]);});
   }
+  private async toBlob(source:ImageData):Promise<Blob>{const canvas=new OffscreenCanvas(source.width,source.height),ctx=canvas.getContext('2d');if(!ctx)throw new Error('Canvas OCR non disponibile.');ctx.putImageData(source,0,0);return canvas.convertToBlob({type:'image/png'});}
   private async crop(source:ImageData,region:Region):Promise<Blob>{const sx=Math.round(source.width*region.x),sy=Math.round(source.height*region.y),sw=Math.round(source.width*region.width),sh=Math.round(source.height*region.height),canvas=new OffscreenCanvas(sw*2,sh*2),ctx=canvas.getContext('2d');if(!ctx)throw new Error('Ritaglio OCR non disponibile.');const full=new OffscreenCanvas(source.width,source.height),fctx=full.getContext('2d');if(!fctx)throw new Error('Canvas OCR non disponibile.');fctx.putImageData(source,0,0);ctx.drawImage(full,sx,sy,sw,sh,0,0,canvas.width,canvas.height);return canvas.convertToBlob({type:'image/png'});}
   async destroy():Promise<void>{this.vision?.terminate();this.vision=undefined;if(this.worker)await(await this.worker).terminate();this.worker=undefined;}
 }

@@ -28,6 +28,7 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
   private readonly exporter = inject(CsvExporter);
   private readonly recognition = inject(RecognitionEngine);
   @ViewChild('camera') camera?: ElementRef<HTMLVideoElement>;
+  @ViewChild('titleGuide') titleGuide?: ElementRef<HTMLDivElement>;
   readonly conditions = CONDITIONS; readonly finishes = FINISHES;
   readonly view = signal<View>('home'); readonly session = signal<Session | undefined>(undefined);
   readonly records = signal<CardRecord[]>([]); readonly candidates = signal<CatalogCard[]>([]);
@@ -148,13 +149,14 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
       const context = canvas.getContext('2d', { willReadFrequently: true });
       if (!context) throw new Error('Canvas non disponibile.');
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const qualityCanvas = document.createElement('canvas'); qualityCanvas.width = 320; qualityCanvas.height = Math.max(1, Math.round(320 * canvas.height / canvas.width));
+      const guide = this.guideInFrame(video);
+      const qualityCanvas = document.createElement('canvas'); qualityCanvas.width = 640; qualityCanvas.height = 160;
       const qualityContext = qualityCanvas.getContext('2d', { willReadFrequently: true }); if (!qualityContext) throw new Error('Canvas non disponibile.');
-      qualityContext.drawImage(canvas, 0, 0, qualityCanvas.width, qualityCanvas.height);
+      qualityContext.drawImage(canvas, guide.x*canvas.width, guide.y*canvas.height, guide.width*canvas.width, guide.height*canvas.height, 0, 0, qualityCanvas.width, qualityCanvas.height);
       const quality = this.recognition.quality(qualityContext.getImageData(0, 0, qualityCanvas.width, qualityCanvas.height));
       if (!quality.acceptable && !confirm(`${quality.reasons.join('. ')}. Usare comunque?`)) return;
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error('Acquisizione non riuscita.')), 'image/jpeg', .9));
-      const result = await this.recognition.recognize(blob, this.guideInFrame(video), this.scanAbort.signal, phase => this.recognitionPhase.set(phase));
+      const result = await this.recognition.recognize(blob, guide, this.scanAbort.signal, phase => this.recognitionPhase.set(phase));
       this.recognitionPhase.set('Ricerca');
       const automatic = await this.catalog.automatic(result, this.scanAbort.signal);
       this.lastRecognition.set(result); this.recognitionFailed.set(automatic.status==='unmatched');
@@ -178,9 +180,9 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
   }
   stopCamera(): void { this.stream?.getTracks().forEach((track) => track.stop()); this.stream = undefined; this.cameraOpen.set(false); }
   private guideInFrame(video: HTMLVideoElement): {x:number;y:number;width:number;height:number} {
-    const box=video.getBoundingClientRect(), scale=Math.max(box.width/video.videoWidth,box.height/video.videoHeight);
+    const box=video.getBoundingClientRect(), guideBox=this.titleGuide?.nativeElement.getBoundingClientRect(), scale=Math.max(box.width/video.videoWidth,box.height/video.videoHeight);
     const renderedWidth=video.videoWidth*scale,renderedHeight=video.videoHeight*scale,offsetX=(box.width-renderedWidth)/2,offsetY=(box.height-renderedHeight)/2;
-    const left=box.width*.05,top=box.height*.05,right=box.width*.95,bottom=box.height*.95;
+    const left=(guideBox?.left??box.left)-box.left,top=(guideBox?.top??box.top)-box.top,right=(guideBox?.right??box.right)-box.left,bottom=(guideBox?.bottom??box.bottom)-box.top;
     return{x:Math.max(0,(left-offsetX)/renderedWidth),y:Math.max(0,(top-offsetY)/renderedHeight),width:Math.min(1,(right-offsetX)/renderedWidth)-Math.max(0,(left-offsetX)/renderedWidth),height:Math.min(1,(bottom-offsetY)/renderedHeight)-Math.max(0,(top-offsetY)/renderedHeight)};
   }
   private error(error: unknown): string { return error instanceof Error ? error.message : 'Operazione non riuscita.'; }

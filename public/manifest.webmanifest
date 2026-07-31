@@ -8,6 +8,6 @@
   "scope": "/",
   "start_url": "/",
   "icons": [
-    { "src": "favicon.ico", "sizes": "48x48", "type": "image/x-icon" }
+    { "src": "logo.jpg", "sizes": "any", "type": "image/jpeg", "purpose": "any maskable" }
   ]
 }
