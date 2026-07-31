@@ -4,19 +4,17 @@ import type { Worker as TesseractWorker } from 'tesseract.js';
 import { CardGeometry, OcrObservation, OcrVariant, RecognitionEvidence, RecognitionHints, Region } from './models';
 
 export interface QualityResult { brightness:number; sharpness:number; acceptable:boolean; reasons:string[] }
-export interface RecognitionResult extends RecognitionEvidence { text:string; titleText:string; detailsText:string; hints:RecognitionHints; geometry:CardGeometry }
+export interface RecognitionResult extends RecognitionEvidence { text:string; titleText:string; hints:RecognitionHints; geometry:CardGeometry }
 export type RecognitionPhase = 'Rilevamento'|'Rettifica'|'Lettura';
 // The title crop deliberately stops before the mana-cost column: decorative
 // frames and mana symbols materially reduce SINGLE_LINE accuracy.
-export const MAGIC_REGIONS={title:{x:.035,y:.045,width:.62,height:.065},details:{x:.035,y:.84,width:.93,height:.14}} as const satisfies Record<string,Region>;
+export const TITLE_REGION={x:.035,y:.04,width:.68,height:.08} as const satisfies Region;
 const VARIANTS:OcrVariant[]=['grayscale','clahe','otsu','adaptive'];
 const clean=(text:string)=>text.replace(/\s+/g,' ').trim();
 
-export function parseMagicText(titleText:string,detailsText:string):RecognitionHints{
+export function parseCardTitle(titleText:string):RecognitionHints{
   const name=clean(titleText).replace(/^[^A-Za-zÀ-ÖØ-öø-ÿ]+|[^A-Za-zÀ-ÖØ-öø-ÿ0-9'’,: -]+$/g,'').trim();
-  const collector=detailsText.match(/\b(\d{1,4}[a-z]?)(?:\s*\/\s*\d{1,4})?\b/i);
-  const setBefore=detailsText.match(/\b([A-Z0-9]{3,5})\s+[·•|]?\s*\d{1,4}[a-z]?\b/i),setAfter=detailsText.match(/\b\d{1,4}[a-z]?\s+[·•|]?\s*([A-Z0-9]{3,5})\b/i);
-  return{name:name||undefined,collectorNumber:collector?.[1],setCode:(setBefore?.[1]??setAfter?.[1])?.toUpperCase()};
+  return{name:name||undefined};
 }
 
 export function chooseDiagnostic(observations:readonly OcrObservation[]):OcrObservation|undefined{return [...observations].sort((a,b)=>{
@@ -35,15 +33,13 @@ export class RecognitionEngine{
     const processed=await this.preprocess(source,guide,signal,onPhase); signal?.throwIfAborted(); onPhase?.('Lettura');
     this.worker??=createWorker(['ita','eng'],undefined,{workerPath:'/ocr/worker.min.js',corePath:'/ocr/tesseract-core.wasm.js',langPath:'/ocr/lang'});
     const ocr=await this.worker,observations:OcrObservation[]=[];
-    for(const variant of VARIANTS){signal?.throwIfAborted();const card=processed.variants[variant];const title=await this.crop(card,MAGIC_REGIONS.title),details=await this.crop(card,MAGIC_REGIONS.details);
+    for(const variant of VARIANTS){signal?.throwIfAborted();const card=processed.variants[variant];const title=await this.crop(card,TITLE_REGION);
       await ocr.setParameters({tessedit_pageseg_mode:PSM.SINGLE_LINE,preserve_interword_spaces:'1'});const tr=await ocr.recognize(title);
-      await ocr.setParameters({tessedit_pageseg_mode:PSM.SPARSE_TEXT,preserve_interword_spaces:'1'});const dr=await ocr.recognize(details);
-      const titleText=clean(tr.data.text),detailsText=clean(dr.data.text),hints=parseMagicText(titleText,detailsText);
-      observations.push({region:'title',variant,group:variant,text:titleText,confidence:tr.data.confidence,hints:{name:hints.name}},{region:'details',variant,group:variant,text:detailsText,confidence:dr.data.confidence,hints:{setCode:hints.setCode,collectorNumber:hints.collectorNumber}});
+      const titleText=clean(tr.data.text),hints=parseCardTitle(titleText);
+      observations.push({region:'title',variant,group:variant,text:titleText,confidence:tr.data.confidence,hints});
     }
-    const title=chooseDiagnostic(observations.filter(o=>o.region==='title')),details=chooseDiagnostic(observations.filter(o=>o.region==='details'));
-    const compatible=VARIANTS.map(v=>({v,h:parseMagicText(observations.find(o=>o.group===v&&o.region==='title')?.text??'',observations.find(o=>o.group===v&&o.region==='details')?.text??'')})).sort((a,b)=>Object.values(b.h).filter(Boolean).length-Object.values(a.h).filter(Boolean).length)[0]?.h??{};
-    return{text:[title?.text,details?.text].filter(Boolean).join('\n'),titleText:title?.text??'',detailsText:details?.text??'',hints:compatible,bestHints:compatible,observations,geometry:processed.geometry};
+    const title=chooseDiagnostic(observations),hints=title?.hints??{};
+    return{text:title?.text??'',titleText:title?.text??'',hints,bestHints:hints,observations,geometry:processed.geometry};
   }
   private preprocess(image:ImageData,guide:Region,signal?:AbortSignal,onPhase?:(p:RecognitionPhase)=>void):Promise<{geometry:CardGeometry;variants:Record<OcrVariant,ImageData>}>{
     this.vision??=new Worker(new URL('./vision.worker',import.meta.url),{type:'module'});const id=++this.request;

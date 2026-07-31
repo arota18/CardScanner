@@ -34,10 +34,21 @@ export interface CatalogCard {
   imageUrl?: string;
 }
 
-export interface Candidate extends CatalogCard {
-  rank: readonly [number, number, number, number, number, number, string];
-  strong: boolean;
+export type CatalogLanguage = 'it' | 'en';
+export interface IdentityCandidate {
+  identityId: string;
+  oracleId?: string;
+  representativeId: string;
+  canonicalName: string;
+  displayName: string;
+  proposedLanguage: CatalogLanguage;
+  score: number;
+  strength: 'strong' | 'weak';
 }
+export type AutomaticCatalogResult =
+  | { status: 'identified'; candidate: IdentityCandidate; source: 'index' | 'live' }
+  | { status: 'ambiguous'; candidates: IdentityCandidate[]; source: 'index' | 'live' }
+  | { status: 'unmatched'; source: 'index' | 'live' };
 
 export interface CardRecord {
   id: string;
@@ -51,8 +62,6 @@ export interface CardRecord {
 }
 
 export interface RecognitionHints {
-  setCode?: string;
-  collectorNumber?: string;
   language?: string;
   name?: string;
 }
@@ -68,7 +77,7 @@ export interface CardGeometry {
   score: number;
 }
 
-export type OcrRegion = 'title' | 'details';
+export type OcrRegion = 'title';
 export type OcrVariant = 'grayscale' | 'clahe' | 'otsu' | 'adaptive';
 export interface OcrObservation {
   region: OcrRegion;
@@ -76,7 +85,7 @@ export interface OcrObservation {
   text: string;
   confidence: number;
   hints: RecognitionHints;
-  /** Couples title and details produced from the same preprocessing variant. */
+  /** Identifies the preprocessing variant that produced this observation. */
   group: OcrVariant;
 }
 export interface RecognitionEvidence {

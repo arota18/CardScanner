@@ -15,10 +15,13 @@ Test e build:
 
 ```bash
 npm test -- --watch=false
+npm run catalog:test
 npm run build
 ```
 
 Gli asset Tesseract (worker, WASM e modelli `ita`/`eng`) sono self-hosted sotto `public/ocr`; nessun frame viene persistito.
+
+`npm run build` rigenera sempre l'indice italiano/inglese dei nomi dal bulk `all_cards` di Scryfall e fallisce se il download o la validazione non riescono. `npm start` lo genera soltanto quando manca. Il bulk resta temporaneo; l'asset derivato `public/catalogs/magic/name-index.v1.json` è ignorato da Git.
 
 ## Hosting statico HTTPS
 

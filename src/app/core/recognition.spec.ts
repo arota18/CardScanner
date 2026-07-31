@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAGIC_REGIONS, RecognitionEngine, chooseDiagnostic, parseMagicText } from './recognition';
+import { TITLE_REGION, RecognitionEngine, chooseDiagnostic, parseCardTitle } from './recognition';
 
 describe('RecognitionEngine quality', () => {
   it('rifiuta un frame buio e uniforme', () => {
@@ -10,40 +10,29 @@ describe('RecognitionEngine quality', () => {
 });
 
 describe('OCR evidence', () => {
-  it('prefers complete evidence, then confidence, for diagnostics', () => {
-    const base={region:'details' as const,group:'otsu' as const};
+  it('prefers a parsed title, then confidence, for diagnostics', () => {
+    const base={region:'title' as const,group:'otsu' as const};
     const chosen=chooseDiagnostic([
-      {...base,variant:'otsu',text:'123',confidence:99,hints:{collectorNumber:'123'}},
-      {...base,variant:'adaptive',group:'adaptive',text:'LCI 123',confidence:70,hints:{setCode:'LCI',collectorNumber:'123'}},
+      {...base,variant:'otsu',text:'!!!',confidence:99,hints:{}},
+      {...base,variant:'adaptive',group:'adaptive',text:'Titano Solare',confidence:70,hints:{name:'Titano Solare'}},
     ]);
-    expect(chosen?.text).toBe('LCI 123');
+    expect(chosen?.text).toBe('Titano Solare');
   });
 });
 
-describe('Magic OCR regions and parsing', () => {
-  it('keeps title and printing details in separate non-overlapping regions', () => {
-    expect(MAGIC_REGIONS.title.y + MAGIC_REGIONS.title.height).toBeLessThan(MAGIC_REGIONS.details.y);
-    for (const region of Object.values(MAGIC_REGIONS)) {
-      expect(region.x).toBeGreaterThanOrEqual(0);
-      expect(region.y).toBeGreaterThanOrEqual(0);
-      expect(region.x + region.width).toBeLessThanOrEqual(1);
-      expect(region.y + region.height).toBeLessThanOrEqual(1);
-    }
+describe('title OCR region and parsing', () => {
+  it('keeps the title crop inside the canonical card', () => {
+    expect(TITLE_REGION.x).toBeGreaterThanOrEqual(0);
+    expect(TITLE_REGION.y).toBeGreaterThanOrEqual(0);
+    expect(TITLE_REGION.x + TITLE_REGION.width).toBeLessThanOrEqual(1);
+    expect(TITLE_REGION.y + TITLE_REGION.height).toBeLessThanOrEqual(1);
   });
 
-  it('extracts a Magic title, set code and collector number', () => {
-    expect(parseMagicText('  Island  ', 'Land · LCI  396/291 EN')).toEqual({
-      name: 'Island',
-      setCode: 'LCI',
-      collectorNumber: '396',
-    });
+  it('extracts only the card title', () => {
+    expect(parseCardTitle('  Titano Solare  ')).toEqual({name:'Titano Solare'});
   });
 
-  it('does not invent fields from empty OCR regions', () => {
-    expect(parseMagicText(' !!! ', 'copyright Wizards')).toEqual({
-      name: undefined,
-      setCode: undefined,
-      collectorNumber: undefined,
-    });
+  it('does not invent a name from an empty OCR region', () => {
+    expect(parseCardTitle(' !!! ')).toEqual({name:undefined});
   });
 });

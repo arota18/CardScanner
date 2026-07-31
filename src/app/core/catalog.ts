@@ -1,9 +1,12 @@
 import { Injectable } from '@angular/core';
-import { Candidate, CatalogCard, Finish, RecognitionEvidence, RecognitionHints } from './models';
+import { AutomaticCatalogResult, CatalogCard, Finish, IdentityCandidate, RecognitionEvidence } from './models';
+import { NameIndexService } from './name-index.service';
 
 export interface CatalogPage { cards: CatalogCard[]; hasMore: boolean; nextPage?: string }
+export interface PrintingFilters { language?: string; setCode?: string }
 export interface CatalogAdapter {
-  automatic(evidence: RecognitionEvidence, signal?: AbortSignal): Promise<Candidate[]>;
+  automatic(evidence: RecognitionEvidence, signal?: AbortSignal): Promise<AutomaticCatalogResult>;
+  printings(identity: IdentityCandidate, filters?: PrintingFilters, page?: string, signal?: AbortSignal): Promise<CatalogPage>;
   manual(query: string, page?: string, signal?: AbortSignal): Promise<CatalogPage>;
   resolve(id: string, signal?: AbortSignal): Promise<CatalogCard>;
 }
@@ -12,7 +15,7 @@ interface ScryfallList { data: ScryfallCard[]; has_more: boolean; next_page?: st
 interface ScryfallCard {
   id: string; name: string; set: string; set_name: string; collector_number: string;
   rarity: string; lang: string; finishes: string[]; promo?: boolean; full_art?: boolean;
-  printed_name?: string;
+  oracle_id?: string; printed_name?: string;
   frame_effects?: string[]; image_uris?: { normal?: string }; card_faces?: { image_uris?: { normal?: string } }[];
 }
 
@@ -55,6 +58,7 @@ export class MagicScryfallAdapter implements CatalogAdapter {
   private readonly cache = new Map<string, unknown>();
   private queue: Promise<void> = Promise.resolve();
   private lastRequest = 0;
+  constructor(private readonly names: NameIndexService) {}
 
   private async get<T>(url: string, signal?: AbortSignal): Promise<T> {
     if (this.cache.has(url)) return this.cache.get(url) as T;
@@ -76,22 +80,21 @@ export class MagicScryfallAdapter implements CatalogAdapter {
     } finally { release(); }
   }
 
-  async automatic(evidence: RecognitionEvidence, signal?: AbortSignal): Promise<Candidate[]> {
+  async automatic(evidence: RecognitionEvidence, signal?: AbortSignal): Promise<AutomaticCatalogResult> {
+    try { return await this.names.match(evidence, signal); }
+    catch (error) { if (error instanceof DOMException && error.name === 'AbortError') throw error; return this.liveAutomatic(evidence, signal); }
+  }
+
+  private async liveAutomatic(evidence: RecognitionEvidence, signal?: AbortSignal): Promise<AutomaticCatalogResult> {
     const filters = ['include:extras', 'include:multilingual', 'game:paper'];
-    // Set and collector number are only paired when the same OCR variant observed them.
-    const pairedHints = evidence.observations.filter(o => o.region === 'details' && o.hints.setCode && o.hints.collectorNumber).map(o => o.hints);
-    const titles = evidence.observations.filter(o => o.region === 'title' && o.hints.name).map(o => ({ name: o.hints.name!, confidence: o.confidence }));
+    const titles = evidence.observations.filter(o => o.hints.name).map(o => ({ name: o.hints.name!, confidence: o.confidence }));
     const searches: string[][] = [];
     const queryKeys = new Set<string>();
-    for (const hints of pairedHints) {
-      const parts = [...filters, `set:${hints.setCode}`, `cn:${hints.collectorNumber}`]; const key = parts.join(' ');
-      if (!queryKeys.has(key)) { queryKeys.add(key); searches.push(parts); }
-    }
     for (const hints of [...titles].sort((a,b) => b.confidence-a.confidence)) {
       const parts = [...filters, hints.name]; const key = normalized(parts.join(' '));
       if (!queryKeys.has(key)) { queryKeys.add(key); searches.push(parts); }
     }
-    if (!searches.length) return [];
+    if (!searches.length) return {status:'unmatched',source:'live'};
     const found = new Map<string, ScryfallCard>();
     for (const parts of searches) {
       try {
@@ -101,22 +104,21 @@ export class MagicScryfallAdapter implements CatalogAdapter {
         if (!(error instanceof Error) || error.message !== 'Nessun risultato.') throw error;
       }
     }
-    return [...found.values()].map(mapCard).map((card) => {
-      const joint = pairedHints.some(h => normalized(card.setCode) === normalized(h.setCode) && normalized(card.collectorNumber) === normalized(h.collectorNumber));
-      const exact = titles.some(h => normalized(card.name) === normalized(h.name));
-      const nameSimilarity = Math.max(0, ...titles.map(h => similarity(card.name, h.name)));
-      const number = pairedHints.some(h => normalized(card.collectorNumber) === normalized(h.collectorNumber));
-      const agreeing = pairedHints.filter(h => normalized(card.setCode) === normalized(h.setCode) && normalized(card.collectorNumber) === normalized(h.collectorNumber)).length + titles.filter(h => similarity(card.name,h.name) >= .8).length;
-      const confidence = Math.max(0, ...evidence.observations.filter(o => (o.region === 'title' && similarity(card.name,o.hints.name) >= .8) || (o.region === 'details' && normalized(card.setCode) === normalized(o.hints.setCode) && normalized(card.collectorNumber) === normalized(o.hints.collectorNumber))).map(o => o.confidence));
-      const rank = [
-        +joint, +exact, nameSimilarity, +number, agreeing, confidence,
-        card.catalogId,
-      ] as const;
-      return { ...card, rank, strong: joint || exact || nameSimilarity >= .8 };
-    }).sort((a, b) => {
-      for (let i = 0; i < 6; i++) { const delta = Number(b.rank[i]) - Number(a.rank[i]); if (delta) return delta; }
-      return a.catalogId.localeCompare(b.catalogId);
-    }).slice(0, 5);
+    const identities=new Map<string,IdentityCandidate>();
+    for(const card of found.values()){const score=Math.max(0,...titles.map(item=>similarity(card.printed_name??card.name,item.name)));const key=card.oracle_id??`scryfall:${card.id}`,candidate:IdentityCandidate={identityId:key,oracleId:card.oracle_id,representativeId:card.id,canonicalName:card.name,displayName:card.printed_name??card.name,proposedLanguage:card.lang==='it'?'it':'en',score,strength:'weak'};const current=identities.get(key);if(!current||current.score<score)identities.set(key,candidate);}
+    const candidates=[...identities.values()].sort((a,b)=>b.score-a.score||a.identityId.localeCompare(b.identityId)).slice(0,5);
+    if(!candidates.length||candidates[0].score<.70)return{status:'unmatched',source:'live'};
+    const exact=candidates.filter(candidate=>titles.some(item=>normalized(item.name)===normalized(candidate.displayName)));
+    if(exact.length===1)return{status:'identified',candidate:{...exact[0],score:1,strength:'strong'},source:'live'};
+    return{status:'ambiguous',candidates,source:'live'};
+  }
+
+  async printings(identity:IdentityCandidate,filters:PrintingFilters={},page?:string,signal?:AbortSignal):Promise<CatalogPage>{
+    if(!identity.oracleId){const card=await this.resolve(identity.representativeId,signal);return{cards:[card],hasMore:false};}
+    const clauses=[`oracleid:${identity.oracleId}`,'game:paper','include:extras','include:multilingual'];
+    if(filters.language)clauses.push(`lang:${filters.language}`);if(filters.setCode)clauses.push(`set:${filters.setCode}`);
+    const url=page??`https://api.scryfall.com/cards/search?unique=prints&order=released&dir=desc&q=${encodeURIComponent(clauses.join(' '))}`;
+    const result=await this.get<ScryfallList>(url,signal);return{cards:result.data.map(mapCard),hasMore:result.has_more,nextPage:result.next_page};
   }
 
   async manual(query: string, page?: string, signal?: AbortSignal): Promise<CatalogPage> {

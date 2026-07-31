@@ -12,6 +12,12 @@
       "installMode": "lazy",
       "updateMode": "prefetch",
       "resources": { "files": ["/ocr/**"] }
+    },
+    {
+      "name": "name-index",
+      "installMode": "lazy",
+      "updateMode": "prefetch",
+      "resources": { "files": ["/catalogs/magic/name-index.v1.json"] }
     }
   ]
 }

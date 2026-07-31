@@ -7,7 +7,12 @@
   },
   "scripts": {
     "ng": "ng",
+    "catalog:generate": "node scripts/generate-name-index.mjs",
+    "catalog:ensure": "node scripts/generate-name-index.mjs --if-missing",
+    "catalog:test": "node --test scripts/generate-name-index.spec.mjs",
+    "prestart": "npm run catalog:ensure",
     "start": "ng serve",
+    "prebuild": "npm run catalog:generate",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"

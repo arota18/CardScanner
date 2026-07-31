@@ -14,9 +14,13 @@ Realizzare una web app installabile come PWA per acquisire carte collezionabili 
 
 Lo schema universale e l'interfaccia devono poter rappresentare tutti i giochi previsti. Il primo incremento operativo implementa Magic end-to-end con Scryfall; gli altri giochi vengono aggiunti progressivamente tramite adattatori di catalogo separati, dopo aver validato sul campo la pipeline OCR e Conferma.
 
+La strategia comune di riconoscimento estrae soltanto il nome dal titolo della carta. Un adattatore futuro può aggiungere indizi specifici del gioco come ottimizzazione, ma tali indizi non sono obbligatori e la loro assenza non impedisce la scelta manuale della stampa.
+
 ## Requisiti confermati per la prima fase
 
 - Scansione e Ricerca di catalogo sono percorsi alternativi e producono entrambi una Identificazione proposta soggetta a Conferma.
+- La Ricerca di catalogo accetta testo libero, inclusi nome, edizione e numero da collezione.
+- Una ricerca manuale che identifica direttamente una stampa la presenta senza passaggi intermedi; una ricerca che identifica soltanto la carta usa lo stesso percorso identità → stampe della Scansione.
 - L'MVP conserva una sola Sessione sul dispositivo, In corso o Terminata; “Bozza” indica esclusivamente lo stato modificabile In corso.
 - La coda persistente delle Scansioni in sospeso è esclusa dall'MVP.
 
@@ -34,7 +38,7 @@ Lo schema universale e l'interfaccia devono poter rappresentare tutti i giochi p
 - Prima dell'OCR, l'app segnala fotografie troppo scure o sfocate.
 - L'operatore visualizza l'anteprima e sceglie se usare o ripetere lo scatto.
 - L'intero frame viene analizzato: i bordi della carta devono essere rilevati e rettificati automaticamente; in assenza di un quadrilatero affidabile lo scatto viene rifiutato. Un editor manuale degli angoli resta fuori dall'MVP.
-- L'app usa il Gioco selezionato e propone nome, edizione e numero da collezione; l'operatore conferma o corregge la proposta prima di aggiungerla all'inventario.
+- L'app usa il Gioco selezionato ed estrae soltanto il possibile nome della carta; dopo la verifica del catalogo, l'operatore sceglie edizione e numero da collezione prima di aggiungerla all'inventario.
 - Ogni sessione di scansione riguarda un solo gioco, scelto all'inizio.
 - Condizione e finitura hanno valori predefiniti di sessione, modificabili durante la conferma.
 - La Finitura viene scelta manualmente durante la Conferma e usa i valori CSV `Normal`, `Foil`, `Holo`, `Reverse Holo`, `Etched`, `Other` o `Unknown`.
@@ -44,7 +48,7 @@ Lo schema universale e l'interfaccia devono poter rappresentare tutti i giochi p
 - La Posizione di magazzino è un unico testo libero con lunghezza massima di 250 caratteri.
 - L'operatore può cambiare la Posizione di magazzino durante la sessione; il nuovo valore si applica alle scansioni successive e non modifica retroattivamente le voci già confermate.
 - La condizione è scelta manualmente tra Mint, Near Mint, Excellent, Good, Light Played, Played e Poor.
-- Ogni Registrazione di carta conserva la lingua della copia fisica; viene proposta quando disponibile, può assumere il valore `Unknown` ed è correggibile manualmente.
+- Ogni Registrazione di carta conserva la lingua della copia fisica; viene proposta dalla stampa scelta quando disponibile, può assumere il valore `Unknown` ed è correggibile manualmente.
 - La PWA è installabile e può essere aperta senza rete.
 - L'intero flusso MVP funziona anche senza installare la PWA; il suggerimento di installazione è facoltativo e non bloccante.
 - La stessa applicazione web deve funzionare direttamente nei browser supportati, senza richiedere la distribuzione tramite Google Play o Apple App Store.
@@ -55,22 +59,39 @@ Lo schema universale e l'interfaccia devono poter rappresentare tutti i giochi p
 - Il client MVP è sviluppato in Angular con supporto PWA.
 - La Sessione conservata usa IndexedDB e l'OCR viene eseguito in un Web Worker per mantenere reattiva l'interfaccia.
 - Il primo incremento Magic è frontend-only e interroga Scryfall direttamente, senza backend, account, database remoto o chiavi applicative.
+- Ogni deploy rigenera `public/catalogs/magic/name-index.v1.json` dal bulk `all_cards`; errori di download, parsing, schema o validazione falliscono la build e lasciano online la versione precedente.
+- Il bulk completo esiste soltanto nella directory temporanea del generatore e non entra in repository, deploy, Cache Storage o IndexedDB.
+- L'indice include soltanto identità cartacee e alias italiani/inglesi, compresi i nomi delle facce, con ordinamento deterministico e metadati verificabili.
+- L'indice viene caricato lazy e confrontato fuori dal thread UI. Se non è caricabile o valido, il riconoscimento usa la ricerca live; la ricerca manuale resta disponibile.
+- I nomi fino a quattro caratteri richiedono exact match. Un fuzzy match è forte con similarità almeno 0,88, margine almeno 0,08 e accordo di due varianti; sotto 0,70 è non riconosciuto, altrimenti mostra al massimo cinque Identità candidate.
+- Dopo la scelta dell'identità, le stampe vengono richieste per `oracle_id`, limitate a `paper`, ordinate per uscita decrescente e paginate. Lingua proposta e set sono filtri modificabili; nessuna stampa è preselezionata.
 - Consultazione, modifica ed esportazione CSV dei dati già acquisiti funzionano offline.
 - Il riconoscimento di nuove scansioni richiede una connessione di rete.
 - Se la rete o il catalogo non sono disponibili, la sessione conservata esistente resta consultabile, modificabile ed esportabile, ma scansione e ricerca nel catalogo vengono sospese.
 - L'MVP non consente registrazioni completamente libere e prive di `Catalog source` o `Catalog ID`.
 - Al ripristino del servizio l'operatore può riprendere la sessione senza perdere le Registrazioni già confermate.
-- La pipeline Magic ritaglia separatamente la fascia superiore del titolo e la fascia inferiore dei dati di stampa; l'illustrazione e il resto della carta non vengono inviati all'OCR.
+- La pipeline di riconoscimento ritaglia soltanto la fascia superiore del titolo; l'illustrazione, i dati di stampa e il resto della carta non vengono inviati all'OCR.
 - Il primo incremento supporta carte verticali inclinate o decentrate e applica una rettifica prospettica automatica a `900 × 1257` pixel.
-- L'OCR elabora entrambe le regioni prima di interrogare il catalogo e mantiene caricato il motore tra scansioni successive; l'accuratezza ha priorità sulla risposta anticipata.
+- L'OCR elabora la fascia del titolo prima di interrogare il catalogo e mantiene caricato il motore tra scansioni successive; l'accuratezza ha priorità sulla risposta anticipata.
 - Il riconoscimento fotografico dell'MVP accetta carte Magic in italiano e inglese nella stessa sessione, senza una Lingua predefinita di sessione.
-- La pipeline estrae il possibile titolo, il codice dell'espansione e il numero da collezione e interroga il catalogo online del Gioco selezionato.
-- L'app presenta uno o più candidati ordinati per compatibilità; nessun candidato entra nell'inventario senza Conferma.
-- Il riconoscimento mostra al massimo cinque candidati con immagine di riferimento, nome, edizione, numero da collezione e variante.
+- La pipeline estrae il possibile titolo e interroga il catalogo online del Gioco selezionato; non tenta di riconoscere codice dell'espansione o numero da collezione.
+- Quando il catalogo verifica una sola corrispondenza forte del nome, l'app apre direttamente le relative stampe fisiche.
+- Quando il nome è ambiguo o soltanto simile, l'app presenta prima una breve scelta tra le identità plausibili e non mescola le rispettive stampe.
+- Dopo la scelta dell'identità, l'app mostra esclusivamente le stampe appartenenti a quella carta.
+- Dopo aver verificato il nome, l'app rende disponibili tutte le stampe fisiche della carta, con immagine di riferimento, nome, edizione, numero da collezione e variante; nessuna entra nell'inventario senza Conferma.
+- L'elenco delle stampe è paginato e può essere filtrato almeno per lingua o edizione; non applica un limite complessivo di cinque risultati.
+- Quando il nome verificato determina una lingua, l'elenco applica inizialmente quella lingua come filtro; l'operatore può cambiarlo o rimuoverlo.
+- Se la lingua del nome non è determinabile, l'elenco non applica alcun filtro linguistico iniziale.
+- Le stampe sono ordinate prima per corrispondenza con il filtro di lingua, poi per data di uscita decrescente e infine per codice dell'edizione e numero da collezione.
+- Nessuna stampa viene preselezionata automaticamente.
+- L'elenco include tutte le versioni fisiche note al catalogo, comprese promo, showcase, Secret Lair e altre varianti speciali, ed esclude le versioni disponibili soltanto in formato digitale.
+- Token ed emblemi sono trattati come identità autonome: compaiono soltanto quando il nome verificato identifica quel token o emblema e non tra le stampe della carta che li genera.
+- Per carte bifronte, split o comunque multifaccia, il nome verificato di qualunque faccia risolve l'identità completa della carta.
+- Le Carte candidate multifaccia mostrano tutte le immagini delle facce disponibili; l'operatore non deve inserire il nome combinato usato dal catalogo.
 - Un testo OCR non verificato non viene trattato come nome valido né usato per precompilare la Ricerca di catalogo.
-- Una corrispondenza è forte quando titolo OCR e titolo di catalogo coincidono o sono molto simili, oppure quando coincidono codice dell'espansione e numero da collezione.
+- Una corrispondenza è forte quando titolo OCR e titolo di catalogo coincidono o sono molto simili.
 - Con una corrispondenza debole nessun candidato è preselezionato; una corrispondenza forte può essere evidenziata ma richiede comunque una Conferma esplicita.
-- Quando il riconoscimento fallisce, l'app mostra separatamente il testo estratto dalle due regioni senza conservare la fotografia.
+- Quando il riconoscimento fallisce, l'app mostra il testo estratto dal titolo senza conservare la fotografia.
 - Se non esiste un candidato soddisfacente, la ricerca manuale nel catalogo è disponibile soltanto su richiesta dell'operatore.
 - L'operatore può rimandare una Scansione non risolta e passare immediatamente alla carta successiva.
 - Una Scansione rimandata non modifica l'Inventario di sessione né il CSV.
@@ -101,7 +122,7 @@ Lo schema universale e l'interfaccia devono poter rappresentare tutti i giochi p
 - Durante il riconoscimento l'interfaccia mostra Rilevamento, Rettifica, Lettura e Ricerca.
 - Dopo 15 secondi senza risultato l'operatore può annullare, fare un nuovo scatto, aprire la ricerca manuale oppure saltare la carta; l'annullamento termina il lavoro e i worker vengono ricreati alla scansione successiva.
 - Il collaudo del riconoscimento Magic usa almeno 200 carte reali con varietà di edizioni, lingue, finiture, layout e condizioni.
-- Per almeno il 90% delle fotografie giudicate utilizzabili, la stampa corretta deve comparire tra i cinque candidati.
+- Per almeno il 90% delle fotografie giudicate utilizzabili, il nome corretto deve essere verificato dal catalogo e tutte le relative stampe fisiche devono risultare consultabili.
 - Fotografie scure, sfocate o illeggibili devono essere rifiutate dal controllo qualità e non conteggiate come identificazioni errate.
 - L'interfaccia e i flussi non dipendenti dalla fotocamera devono rispettare WCAG 2.2 livello AA.
 - Controlli touch, contrasto, focus, etichette per tecnologie assistive, ingrandimento e messaggi non basati soltanto sul colore rientrano nel collaudo.
@@ -117,7 +138,7 @@ Lo schema universale e l'interfaccia devono poter rappresentare tutti i giochi p
 2. **Impostazione sessione** — scelta di gioco, Condizione, Finitura e Posizione di magazzino predefinite.
 3. **Fotocamera** — guida di inquadratura, torcia, scatto e annullamento dell'ultima aggiunta.
 4. **Anteprima** — uso o ripetizione della fotografia.
-5. **Candidati** — fino a cinque risultati, ricerca manuale o salto.
+5. **Candidati** — stampe fisiche paginate e filtrabili, ricerca manuale o salto.
 6. **Conferma carta** — stampa, Lingua, Finitura, Condizione e Posizione di magazzino.
 7. **Inventario di sessione** — elenco, modifica ed eliminazione.
 8. **Riepilogo finale** — validazione, download CSV e avvio di una nuova sessione.

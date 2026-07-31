@@ -25,11 +25,27 @@ L'acquisizione del fronte di una singola carta tramite fotocamera.
 _Evitare_: fotografia, inserimento
 
 **Ricerca di catalogo**:
-Il percorso manuale alternativo alla Scansione che individua una stampa senza fotocamera.
+Il percorso manuale alternativo alla Scansione che individua un'identità o una stampa tramite testo libero.
 _Evitare_: registrazione libera
 
+**Nome proposto**:
+Il nome della carta estratto dal titolo visibile in una Scansione e non ancora verificato dal catalogo.
+_Evitare_: stampa riconosciuta, nome definitivo
+
+**Indice locale dei nomi**:
+Asset versionato per schema, derivato durante il deploy dal bulk Scryfall e contenente soltanto identità e alias italiani/inglesi delle carte cartacee. Non è un catalogo di stampe e non viene conservato in IndexedDB.
+_Evitare_: bulk locale, catalogo offline
+
+**Identità candidata**:
+Una possibile identità di carta compatibile con un Nome proposto che il catalogo non riesce a verificare in modo univoco.
+_Evitare_: stampa, edizione, versione
+
+**Carta candidata**:
+Una stampa fisica del catalogo appartenente alla carta compatibile con il Nome proposto e presentata all'operatore.
+_Evitare_: carta confermata, riconoscimento definitivo
+
 **Identificazione proposta**:
-Il riconoscimento non ancora verificato di gioco, nome, edizione e numero da collezione prodotto da una Scansione o Ricerca di catalogo.
+La stampa di catalogo scelta dall'operatore, completa di nome, edizione e numero da collezione, ma non ancora confermata.
 _Evitare_: carta riconosciuta, risultato definitivo
 
 **Scansione in sospeso**:
@@ -80,13 +96,25 @@ _Evitare_: indirizzo, posizione della fotocamera
 La lingua della copia fisica, oppure Sconosciuta quando non è determinabile.
 _Evitare_: lingua dell'interfaccia
 
+**Lingua proposta**:
+La lingua ricavata dal nome verificato e usata soltanto come filtro iniziale delle Carte candidate.
+_Evitare_: Lingua confermata, lingua obbligatoria
+
 ## Relazioni
 
 - Un **Inventario di sessione** viene rappresentato da un **CSV universale**
 - Un **Inventario di sessione** contiene zero o più **Registrazioni di carta**
 - Ogni **Registrazione di carta** produce esattamente una riga del **CSV universale**
 - Ogni **Registrazione di carta** ha esattamente un **Istante di registrazione**
-- Una **Scansione** riguarda esattamente una carta e produce zero o una **Identificazione proposta**
+- Una **Scansione** riguarda esattamente una carta e produce zero o un **Nome proposto**
+- Il **Nome proposto** è l'unico indizio di riconoscimento richiesto a tutti i Giochi selezionati
+- Un **Nome proposto** con un'unica corrispondenza forte identifica direttamente la carta
+- Un **Nome proposto** ambiguo produce più **Identità candidate**, tra le quali l'operatore sceglie la carta
+- Una carta identificata rende disponibili tutte le **Carte candidate** fisiche che le appartengono
+- Il nome verificato di una faccia identifica l'intera carta multifaccia e non una Registrazione separata della singola faccia
+- La scelta di una **Carta candidata** produce una **Identificazione proposta**
+- Una **Ricerca di catalogo** che identifica soltanto la carta rende disponibili le stesse **Carte candidate** di una Scansione
+- Una **Ricerca di catalogo** che identifica direttamente una stampa produce la relativa **Identificazione proposta**
 - Una **Identificazione proposta** richiede esattamente una **Conferma**
 - Solo una **Identificazione proposta** confermata può creare una **Registrazione di carta** nell'Inventario di sessione
 - Una **Scansione in sospeso** non crea alcuna **Registrazione di carta**
@@ -104,6 +132,9 @@ _Evitare_: lingua dell'interfaccia
 - Una **Sessione di scansione** può avere un **Predefinito di sessione** per la Posizione di magazzino
 - La Posizione cambia per le carte successive soltanto scegliendo “Usa per le prossime carte”
 - Ogni copia confermata ha esattamente una **Lingua**
+- Un nome verificato in una lingua può produrre zero o una **Lingua proposta**
+- La **Lingua proposta** filtra inizialmente le **Carte candidate**, ma l'operatore può modificarla o rimuoverla
+- La **Lingua** della Registrazione di carta deriva dalla Carta candidata scelta e resta correggibile durante la Conferma
 - Ogni copia confermata appartiene sempre a una **Registrazione di carta** distinta
 
 ## Dialogo di esempio
@@ -116,6 +147,18 @@ _Evitare_: lingua dell'interfaccia
 >
 > **Dev:** "Una carta riconosciuta entra subito nell'inventario?"
 > **Esperto di dominio:** "No, l'operatore deve prima dare la **Conferma** all'**Identificazione proposta**."
+>
+> **Dev:** "La **Scansione** riconosce anche edizione e numero da collezione?"
+> **Esperto di dominio:** "No, estrae soltanto un **Nome proposto**; l'operatore sceglie poi la stampa tra le **Carte candidate** del catalogo."
+>
+> **Dev:** "Se il **Nome proposto** corrisponde a più carte, mescoliamo tutte le loro stampe?"
+> **Esperto di dominio:** "No, l'operatore sceglie prima un'**Identità candidata** e solo dopo consulta le sue **Carte candidate**."
+>
+> **Dev:** "Il titolo italiano rende definitiva la **Lingua** della copia?"
+> **Esperto di dominio:** "No, produce una **Lingua proposta** che filtra inizialmente le stampe e può essere cambiata o rimossa."
+>
+> **Dev:** "Una faccia di una carta bifronte è una carta distinta?"
+> **Esperto di dominio:** "No, il suo nome identifica l'intera carta multifaccia e le **Carte candidate** mostrano tutte le facce disponibili."
 >
 > **Dev:** "Il riconoscimento deve capire se la carta è Pokémon o Magic?"
 > **Esperto di dominio:** "No, tutte le **Scansioni** usano il **Gioco selezionato** all'inizio della **Sessione di scansione**."
@@ -134,3 +177,8 @@ _Evitare_: lingua dell'interfaccia
 - La proposta iniziale per le Scansioni in sospeso prevedeva di conservare la fotografia; risolto: nessuna immagine persiste, neppure nella **Sessione conservata**.
 - Inizialmente le copie identiche venivano aggregate in una Voce con Quantità; risolto: ogni copia produce una **Registrazione di carta** e l'aggregazione è esterna a CardScanner.
 - La coda delle Scansioni in sospeso è esplicitamente esclusa dall'MVP.
+- "Riconoscimento della carta" poteva indicare anche il riconoscimento automatico della stampa; risolto: la **Scansione** estrae soltanto il **Nome proposto**, mentre l'operatore sceglie la stampa dal catalogo.
+- Gli indizi OCR specifici di un gioco potevano essere considerati obbligatori; risolto: soltanto il **Nome proposto** appartiene al flusso comune, mentre altri indizi restano ottimizzazioni facoltative degli adattatori.
+- "Candidato" poteva indicare sia un possibile nome sia una stampa fisica; risolto: **Identità candidata** indica il possibile nome, **Carta candidata** indica la stampa.
+- La lingua ricavata dal titolo poteva essere confusa con la **Lingua** confermata; risolto: è soltanto una **Lingua proposta** usata come filtro iniziale.
+- La Ricerca di catalogo poteva costituire un flusso separato per le stampe; risolto: accetta testo libero ma converge sul percorso identità → stampe quando non individua già una stampa precisa.

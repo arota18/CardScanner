@@ -10,7 +10,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MagicScryfallAdapter } from '../core/catalog';
 import { CsvExporter } from '../core/csv-exporter';
-import { CONDITIONS, CatalogCard, Condition, FINISHES, Finish, Session, CardRecord } from '../core/models';
+import { CONDITIONS, CatalogCard, Condition, FINISHES, Finish, Session, CardRecord, IdentityCandidate } from '../core/models';
 import { SessionRepository } from '../core/session.repository';
 import { RecognitionEngine, RecognitionPhase, RecognitionResult } from '../core/recognition';
 
@@ -31,6 +31,7 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
   readonly conditions = CONDITIONS; readonly finishes = FINISHES;
   readonly view = signal<View>('home'); readonly session = signal<Session | undefined>(undefined);
   readonly records = signal<CardRecord[]>([]); readonly candidates = signal<CatalogCard[]>([]);
+  readonly identityCandidates = signal<IdentityCandidate[]>([]);
   readonly busy = signal(false); readonly message = signal(''); readonly canAcquire = signal(false);
   readonly cameraOpen = signal(false); readonly torchAvailable = signal(false);
   readonly lastRecognition = signal<RecognitionResult | undefined>(undefined);
@@ -42,6 +43,7 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
   readonly count = computed(() => this.records().length);
   defaults = { condition: 'Near Mint' as Condition, finish: 'Normal' as Finish, storageLocation: '' };
   query = ''; nextPage?: string; selected?: CatalogCard;
+  selectedIdentity?: IdentityCandidate; printingLanguage=''; printingSet='';
   editingId?: string;
   confirmation = { language: 'Unknown', finish: 'Normal' as Finish, condition: 'Near Mint' as Condition, storageLocation: '', useLocationNext: false };
 
@@ -62,9 +64,16 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
     this.busy.set(true); this.message.set('');
     try {
       const result = await this.catalog.manual(this.query.trim(), loadMore ? this.nextPage : undefined);
-      this.candidates.set(loadMore ? [...this.candidates(), ...result.cards] : result.cards); this.nextPage = result.nextPage;
+      this.identityCandidates.set([]);this.selectedIdentity=undefined;this.candidates.set(loadMore ? [...this.candidates(), ...result.cards] : result.cards); this.nextPage = result.nextPage;
     } catch (error) { this.message.set(this.error(error)); } finally { this.busy.set(false); }
   }
+  async chooseIdentity(identity:IdentityCandidate,loadMore=false):Promise<void>{
+    this.busy.set(true);this.message.set('');this.selectedIdentity=identity;
+    if(!loadMore){this.printingLanguage=identity.proposedLanguage;this.printingSet='';this.candidates.set([]);this.nextPage=undefined;}
+    try{const result=await this.catalog.printings(identity,{language:this.printingLanguage||undefined,setCode:this.printingSet.trim()||undefined},loadMore?this.nextPage:undefined);this.candidates.set(loadMore?[...this.candidates(),...result.cards]:result.cards);this.nextPage=result.nextPage;if(!result.cards.length)this.message.set('Nessuna stampa fisica con questi filtri.');}
+    catch(error){this.message.set(this.error(error));}finally{this.busy.set(false);}
+  }
+  applyPrintingFilters():void{if(this.selectedIdentity)void this.chooseIdentity(this.selectedIdentity);}
   choose(card: CatalogCard): void {
     const session = this.session(); if (!session) return;
     this.selected = card; this.editingId = undefined;
@@ -85,7 +94,7 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
         const updated = { ...session, defaults: { ...session.defaults, storageLocation: record.storageLocation } };
         await this.repository.saveSession(updated); this.session.set(updated);
       }
-      this.message.set(existing ? `${record.catalog.name} aggiornata.` : `${record.catalog.name} aggiunta.`); this.query = ''; this.candidates.set([]); this.selected = undefined; this.editingId = undefined; this.view.set('capture');
+      this.message.set(existing ? `${record.catalog.name} aggiornata.` : `${record.catalog.name} aggiunta.`); this.query = ''; this.candidates.set([]);this.identityCandidates.set([]);this.selectedIdentity=undefined; this.selected = undefined; this.editingId = undefined; this.view.set('capture');
     } catch (error) { this.message.set(this.error(error)); }
   }
   async remove(record: CardRecord): Promise<void> {
@@ -147,24 +156,24 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error('Acquisizione non riuscita.')), 'image/jpeg', .9));
       const result = await this.recognition.recognize(blob, this.guideInFrame(video), this.scanAbort.signal, phase => this.recognitionPhase.set(phase));
       this.recognitionPhase.set('Ricerca');
-      const candidates = await this.catalog.automatic(result, this.scanAbort.signal);
-      const strong = candidates.some((candidate) => candidate.strong);
-      this.lastRecognition.set(result); this.recognitionFailed.set(!strong);
-      this.candidates.set(candidates); this.query = strong ? result.hints.name ?? '' : ''; this.nextPage = undefined;
+      const automatic = await this.catalog.automatic(result, this.scanAbort.signal);
+      this.lastRecognition.set(result); this.recognitionFailed.set(automatic.status==='unmatched');
+      this.candidates.set([]);this.identityCandidates.set(automatic.status==='ambiguous'?automatic.candidates:[]);this.query='';this.nextPage=undefined;
+      if(automatic.status==='identified')await this.chooseIdentity(automatic.candidate);
       this.stopCamera(); this.view.set('search');
-      this.message.set(strong ? '' : 'Testo non riconosciuto.');
+      if(automatic.status==='unmatched')this.message.set('Testo non riconosciuto.');
     } catch (error) { if (!(error instanceof DOMException && error.name === 'AbortError')) this.message.set(this.error(error)); }
     finally { clearTimeout(slowTimer); this.busy.set(false); this.recognitionPhase.set(undefined); this.slowRecognition.set(false); this.scanAbort = undefined; }
   }
   async cancelRecognition(): Promise<void> { this.scanAbort?.abort(); await this.recognition.destroy(); this.message.set('Riconoscimento annullato.'); }
-  openManualSearch(): void { this.scanAbort?.abort(); this.query=''; this.candidates.set([]); this.stopCamera(); this.view.set('search'); }
+  openManualSearch(): void { this.scanAbort?.abort(); this.query=''; this.candidates.set([]);this.identityCandidates.set([]);this.selectedIdentity=undefined; this.stopCamera(); this.view.set('search'); }
   async retryPhoto(): Promise<void> {
-    this.lastRecognition.set(undefined); this.recognitionFailed.set(false); this.candidates.set([]); this.query = '';
+    this.lastRecognition.set(undefined); this.recognitionFailed.set(false); this.candidates.set([]);this.identityCandidates.set([]);this.selectedIdentity=undefined; this.query = '';
     this.view.set('capture');
     await this.startCamera();
   }
   skipCard(): void {
-    this.lastRecognition.set(undefined); this.recognitionFailed.set(false); this.candidates.set([]); this.query = '';
+    this.lastRecognition.set(undefined); this.recognitionFailed.set(false); this.candidates.set([]);this.identityCandidates.set([]);this.selectedIdentity=undefined; this.query = '';
     this.view.set('capture');
   }
   stopCamera(): void { this.stream?.getTracks().forEach((track) => track.stop()); this.stream = undefined; this.cameraOpen.set(false); }
